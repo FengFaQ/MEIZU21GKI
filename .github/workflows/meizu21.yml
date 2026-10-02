@@ -28,7 +28,7 @@ on:
       - 'susfs4ksu/**'     # 内置 SUSFS 补丁快照
       - 'tools/**'         # KMI 兼容层/CRC 对齐等工具
       - 'device/**'        # 设备模块 KMI 清单、原厂参考 config
-      # 注意: 不含 'log/**' —— 失败日志提交不会再次触发构建
+      # 注意: 不含 'log/**' 与 'release/**' —— 失败日志/构建报告归档的提交不会再次触发构建
   workflow_dispatch:
     inputs:
       ksu_variant:

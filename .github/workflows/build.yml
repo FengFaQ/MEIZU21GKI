@@ -1620,7 +1620,11 @@ jobs:
           set -e
           : "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"
           echo "KERNEL_ROOT=$KERNEL_ROOT"
-          python3 "$GITHUB_WORKSPACE/tools/apply_kmi_shim.py" --kernel-root "$KERNEL_ROOT/common"
+          mkdir -p "$GITHUB_WORKSPACE/build-logs"
+          # 输出同时进 build-logs/ —— 失败时会被"提交失败日志"步骤带到 log/ 目录, 便于离线诊断
+          python3 "$GITHUB_WORKSPACE/tools/apply_kmi_shim.py" --kernel-root "$KERNEL_ROOT/common" 2>&1 \
+            | tee "$GITHUB_WORKSPACE/build-logs/apply_kmi_shim.log"
+          test "${PIPESTATUS[0]}" -eq 0 || exit 1
           git -C "$KERNEL_ROOT/common" diff --stat 2>/dev/null | tail -12 || true
 
       - name: 编译内核
@@ -1786,6 +1790,8 @@ jobs:
             } > "$TARGET/$RUN_DIR/README.md"
 
             cp -r "$GITHUB_WORKSPACE/build-logs"/* "$TARGET/$RUN_DIR/" 2>/dev/null || true
+            # 各步骤产出的 TXT 报告也一并带上(补符号/CRC 对齐等在编译前后都可能失败)
+            cp -f "$GITHUB_WORKSPACE"/*.txt "$TARGET/$RUN_DIR/" 2>/dev/null || true
             if [ -d "$GITHUB_WORKSPACE/patch-rejects" ]; then
               mkdir -p "$TARGET/$RUN_DIR/patch-rejects"
               cp -r "$GITHUB_WORKSPACE/patch-rejects"/* "$TARGET/$RUN_DIR/patch-rejects/" 2>/dev/null || true
@@ -1852,7 +1858,9 @@ jobs:
             --image "$IMG" --vmlinux "$VM" --symvers "$SV" \
             --manifest "$GITHUB_WORKSPACE/device/meizu21/module_kmi_manifest.txt" \
             --symvers-out "$GITHUB_WORKSPACE/Module.symvers.patched" \
-            --report "$GITHUB_WORKSPACE/patch_crc_report.txt"
+            --report "$GITHUB_WORKSPACE/patch_crc_report.txt" 2>&1 \
+            | tee "$GITHUB_WORKSPACE/build-logs/patch_kcrctab.log"
+          test "${PIPESTATUS[0]}" -eq 0 || exit 1
           grep -q '回读校验' "$GITHUB_WORKSPACE/patch_crc_report.txt" || { echo "::error::CRC 对齐未产生回读校验"; exit 1; }
           if grep -q '回读校验.*有失败' "$GITHUB_WORKSPACE/patch_crc_report.txt"; then
             echo "::error title=CRC 写入回读失败::见 patch_crc_report.txt"
@@ -2107,6 +2115,86 @@ jobs:
           fi
 
       # 产物名不带 _kernel- 前缀，避免 release 的「上传内核产物」通配到补丁文件
+      # 把本轮构建的报告归档到仓库里的 release/ 文件夹(★这不是 GitHub 的 Release 发布产物)。
+      # 目的: 不用登录 Actions 页面就能直接翻看构建出的 TXT(module_compat / patch_crc_report /
+      # config_vs_stock / source_revision 等)。只保留最近 2 份, 更早的自动删除。
+      # 只归档文本与小文件 —— .img/.zip 不入库(那些在 Release 与 dist 分支), 避免仓库历史膨胀。
+      # 触发路径不含 release/**, 提交归档不会再次触发构建。
+      - name: 归档构建报告到 release/ (保留 2 份)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          BRANCH="${{ github.event.repository.default_branch }}"
+          [ -n "$BRANCH" ] || BRANCH="main"
+          RUN_NUM="${GITHUB_RUN_NUMBER}"
+          DIR_NAME="run-${RUN_NUM}"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          STAGE="$RUNNER_TEMP/release-stage"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/$DIR_NAME"
+          cp -f "$GITHUB_WORKSPACE"/*.txt "$STAGE/$DIR_NAME/" 2>/dev/null || true
+          cp -f "$GITHUB_WORKSPACE/Module.symvers.patched" "$STAGE/$DIR_NAME/" 2>/dev/null || true
+          if [ -d "$GITHUB_WORKSPACE/patch-rejects" ]; then
+            mkdir -p "$STAGE/$DIR_NAME/patch-rejects"
+            cp -f "$GITHUB_WORKSPACE"/patch-rejects/* "$STAGE/$DIR_NAME/patch-rejects/" 2>/dev/null || true
+          fi
+          {
+            echo "# 构建报告 run ${RUN_NUM}"
+            echo ""
+            echo "- 时间(UTC): $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo "- 结果: ${{ job.status }}"
+            echo "- 提交: ${GITHUB_SHA}"
+            echo "- 运行页面: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- GKI: ${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}"
+            echo "- 变体/模式: ${{ inputs.ksu_variant }} / ${{ inputs.ksu_mode }} (SUSFS=${{ inputs.enable_susfs }})"
+            echo "- LTO: ${{ inputs.lto_mode }}"
+            echo ""
+            echo "## 本轮归档的文件"
+            echo ""
+            ls -1 "$STAGE/$DIR_NAME" | sed 's/^/- /'
+          } > "$STAGE/$DIR_NAME/README.md"
+          echo "=== 归档内容 ==="
+          ls -la "$STAGE/$DIR_NAME"
+
+          for attempt in 1 2 3; do
+            TARGET="$RUNNER_TEMP/repo-release-$attempt"
+            rm -rf "$TARGET"
+            if ! git clone -q --depth 1 --filter=blob:none --sparse "$REMOTE" "$TARGET"; then
+              echo "克隆失败, 5s 后重试..."
+              sleep 5
+              continue
+            fi
+            git -C "$TARGET" sparse-checkout set release
+            mkdir -p "$TARGET/release"
+            rm -rf "$TARGET/release/$DIR_NAME"
+            cp -r "$STAGE/$DIR_NAME" "$TARGET/release/$DIR_NAME"
+            # 只保留最近 2 份: 目录名形如 run-<构建号>, 按数值排序删掉更早的
+            if [ -d "$TARGET/release" ]; then
+              ( cd "$TARGET/release" && ls -1d run-* 2>/dev/null | sed 's/^run-//' | sort -n | head -n -2 | while read -r old; do
+                  echo "删除过期归档: release/run-$old"
+                  rm -rf "run-$old"
+                done ) || true
+            fi
+            git -C "$TARGET" config user.email "action@github.com"
+            git -C "$TARGET" config user.name "github-actions[bot]"
+            git -C "$TARGET" add -A release
+            if git -C "$TARGET" diff --cached --quiet; then
+              echo "无归档变更"
+              exit 0
+            fi
+            git -C "$TARGET" commit -q -m "release: 构建报告 run ${RUN_NUM} ($(echo "${GITHUB_SHA}" | cut -c1-8)) 结果=${{ job.status }}"
+            if git -C "$TARGET" push -q origin "HEAD:$BRANCH"; then
+              echo "归档已提交: $BRANCH/release/$DIR_NAME/"
+              exit 0
+            fi
+            echo "第 $attempt 次推送失败, 5s 后重试..."
+            sleep 5
+          done
+          echo "::warning::归档推送失败(不影响构建结论)"
+
       - name: 上传 SUSFS 集成补丁
         if: success() && env.SUSFS_PATCH_EXPORT == 'true'
         uses: actions/upload-artifact@v6
