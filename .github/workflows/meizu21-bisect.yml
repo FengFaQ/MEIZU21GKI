@@ -17,6 +17,12 @@ concurrency:
   cancel-in-progress: false
 
 on:
+  # ★ 改动本文件即触发一次 L0(禁用KSU = 纯 GKI)构建 —— 便于"改完立刻验证",
+  #   不必等人到网页点 Run workflow。push 事件没有 inputs, 下面 `with:` 全部用 || 落默认值。
+  push:
+    branches: [ "main" ]
+    paths:
+      - '.github/workflows/meizu21-bisect.yml'
   workflow_dispatch:
     inputs:
       label:
@@ -78,19 +84,19 @@ jobs:
       kernel_version: "6.1"
       sub_level: "25"
       os_patch_level: "2023-10"
-      ksu_variant: ${{ inputs.ksu_variant }}
-      ksu_mode: ${{ inputs.ksu_mode }}
-      lto_mode: ${{ inputs.lto_mode }}
-      enable_susfs: ${{ inputs.ksu_mode != '禁用SUSFS' && inputs.ksu_mode != '禁用KSU' }}
-      use_zram: ${{ inputs.use_zram }}
-      use_bbg: ${{ inputs.use_bbg }}
-      use_kpm: ${{ inputs.use_kpm }}
+      ksu_variant: ${{ inputs.ksu_variant || 'ReSukiSU' }}
+      ksu_mode: ${{ inputs.ksu_mode || '禁用KSU' }}
+      lto_mode: ${{ inputs.lto_mode || 'none' }}
+      enable_susfs: ${{ (inputs.ksu_mode || '禁用KSU') != '禁用SUSFS' && (inputs.ksu_mode || '禁用KSU') != '禁用KSU' }}
+      use_zram: ${{ inputs.use_zram || false }}
+      use_bbg: ${{ inputs.use_bbg || false }}
+      use_kpm: ${{ inputs.use_kpm || 'disabled (关闭)' }}
       # 与原厂 LOCALVERSION 完全一致(见 meizu21.yml 的说明), 否则厂商模块拒绝加载
       version: "6.1.25-android14-11-maybe-dirty"
       build_time: ""
       supp_op: false
       droidspaces: "off"
-      artifact_upload_mode: ${{ inputs.artifact_upload_mode }}
+      artifact_upload_mode: ${{ inputs.artifact_upload_mode || '上传全部' }}
       boot_sign: "不签名"
       extra_config: |
         # CONFIG_TRIM_UNUSED_KSYMS is not set

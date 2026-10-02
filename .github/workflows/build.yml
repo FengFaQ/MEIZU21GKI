@@ -113,6 +113,18 @@ on:
         required: false
         type: string
         default: "签名"
+      # ==================== 内核源码来源(默认 AOSP ACK) ====================
+      # 厂商模块会导入一些只存在于厂商 fork 里的私有导出符号(纯 ACK 树没有/未导出),
+      # 这时必须用同源的树构建, 否则模块加载失败 → 卡第一屏。见 tools/override_manifest_common.py
+      # 例: kernel_repo=clo/la/kernel/common  kernel_branch=ks-kernel.lnx.3.0.c2
+      kernel_repo:
+        required: false
+        type: string
+        default: ""
+      kernel_branch:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build-kernel:
@@ -437,6 +449,21 @@ jobs:
               sed -i "/path=\"common\"/ s|revision=\"${FORMATTED_BRANCH}\"|revision=\"refs/tags/${latest_tag}\"|" $DEFAULT_MANIFEST_PATH
               TAG_FALLBACK="$latest_tag"
             fi
+
+            # ★ 外部内核树覆盖(可选): 用厂商 fork 的 common 替换 AOSP ACK 项目。
+            #   背景: 原厂模块导入了 17 个纯 ACK 树没有或未导出的私有符号
+            #   (scsi_execute_cmd_len / wait_spam_info / mem_cgroup_id_put2 / reclaim_pages /
+            #    pm_system_irq_wakeup + 12 个 __tracepoint_android_vh_* 厂商 hook),
+            #   这些属于 GKI 保证之外, 只有厂商 fork 里才有 → 必须用同源树构建。
+            if [ -n "${{ inputs.kernel_repo }}" ] && [ -n "${{ inputs.kernel_branch }}" ]; then
+              echo "使用外部内核树替换 common: ${{ inputs.kernel_repo }} @ ${{ inputs.kernel_branch }}"
+              if ! python3 "$GITHUB_WORKSPACE/tools/override_manifest_common.py" "$DEFAULT_MANIFEST_PATH" \
+                     --repo "${{ inputs.kernel_repo }}" --branch "${{ inputs.kernel_branch }}"; then
+                echo "::error::替换 common 项目失败"
+                return 1
+              fi
+              KERNEL_SOURCE_OVERRIDE="${{ inputs.kernel_repo }}@${{ inputs.kernel_branch }}"
+            fi
           }
 
           attempt=1
@@ -486,6 +513,24 @@ jobs:
 
           echo "REMOTE_BRANCH=$REMOTE_BRANCH" >> $GITHUB_ENV
           echo "TAG_FALLBACK=$TAG_FALLBACK" >> $GITHUB_ENV
+
+          # 记录"实际检出的内核源码版本" —— 排查 KMI/CRC 差异时, 必须先知道构建的是哪个提交。
+          # (此前多次判断缺少这一环: 只能从版本串 g<sha> 反推, 容易误判)
+          {
+            echo "manifest_branch=common-${FORMATTED_BRANCH}"
+            echo "source_override=${KERNEL_SOURCE_OVERRIDE:-<无, 用 AOSP ACK>}"
+            echo "REMOTE_BRANCH=${REMOTE_BRANCH:-<空>}"
+            echo "TAG_FALLBACK=${TAG_FALLBACK:-<无>}"
+            echo "common_head=$(git -C "$KERNEL_ROOT/common" rev-parse HEAD 2>/dev/null || echo '?')"
+            echo "common_describe=$(git -C "$KERNEL_ROOT/common" describe --tags --always --dirty 2>/dev/null || echo '?')"
+            git -C "$KERNEL_ROOT/common" log -1 --format='common_commit_date=%ad%ncommon_subject=%s' 2>/dev/null || true
+            echo "--- manifest 里的 common 项目 ---"
+            grep -B1 -A3 'name="common"' "$KERNEL_ROOT/.repo/manifests/default.xml" 2>/dev/null | head -14 || true
+            echo "--- KMI/LOCALVERSION 常量 ---"
+            grep -hE 'KMI_GENERATION|LOCALVERSION|KERNEL_VERSION' \
+              "$KERNEL_ROOT/common/build.config.constants" "$KERNEL_ROOT/common/build.config" 2>/dev/null || true
+          } > "$GITHUB_WORKSPACE/source_revision.txt" 2>&1
+          cat "$GITHUB_WORKSPACE/source_revision.txt"
 
       - name: 应用 Stock Config 伪装
         run: |
@@ -1866,6 +1911,45 @@ jobs:
             echo "::warning title=厂商模块可能加载失败::见 module_compat.txt(随产物一起上传), 里面列出了缺失符号/CRC 不一致的符号"
           fi
 
+      # 把"构建出来的 .config"与设备原厂 config 自动对比: 判断 config 层是否已对齐,
+      # 不必每次人工从镜像里抽 IKCONFIG。(参考 config 由 tools/extract_ref_report.py 从原厂 Image 抽)
+      - name: 对比构建 config 与原厂 config
+        if: always()
+        run: |
+          REF="$GITHUB_WORKSPACE/device/meizu21/ref_stock.config"
+          OUT="$GITHUB_WORKSPACE/config_vs_stock.txt"
+          : "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"
+          : > "$OUT"
+          if [ ! -f "$REF" ]; then
+            echo "缺少参考 config $REF, 跳过" >> "$OUT"; cat "$OUT"; exit 0
+          fi
+          EXTRACT="$KERNEL_ROOT/common/scripts/extract-ikconfig"
+          IMG=""
+          for c in "$KERNEL_ROOT/bazel-bin/common/kernel_aarch64/Image" \
+                   "$KERNEL_ROOT/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image"; do
+            if [ -f "$c" ]; then IMG="$c"; break; fi
+          done
+          if [ -z "$IMG" ]; then
+            IMG=$(find "$KERNEL_ROOT" -maxdepth 6 -name Image -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$IMG" ] || [ ! -f "$IMG" ] || [ ! -f "$EXTRACT" ]; then
+            echo "Image(${IMG:-无}) 或 extract-ikconfig 不可用, 跳过" >> "$OUT"; cat "$OUT"; exit 0
+          fi
+          OUR="$RUNNER_TEMP/ours.config"
+          if ! bash "$EXTRACT" "$IMG" > "$OUR" 2>/dev/null || [ ! -s "$OUR" ]; then
+            echo "从 Image 抽 .config 失败(IKCONFIG 未开?), 跳过" >> "$OUT"; cat "$OUT"; exit 0
+          fi
+          norm() { grep -E '^(# )?CONFIG_' "$1" | sed -E 's/[[:space:]]+$//' | LC_ALL=C sort; }
+          norm "$OUR" > "$RUNNER_TEMP/ours.norm" || true
+          norm "$REF" > "$RUNNER_TEMP/ref.norm" || true
+          {
+            echo "== 构建结果 config vs 原厂(设备)config =="
+            echo "差异行数: $(diff "$RUNNER_TEMP/ref.norm" "$RUNNER_TEMP/ours.norm" 2>/dev/null | grep -c '^[<>]' || true)  (< 原厂 / > 我们)"
+            echo ""
+            diff "$RUNNER_TEMP/ref.norm" "$RUNNER_TEMP/ours.norm" 2>/dev/null || true
+          } >> "$OUT"
+          head -100 "$OUT"
+
       - name: 准备 AnyKernel3 目录
         if: inputs.artifact_upload_mode != '上传全部'
         run: |
@@ -1999,6 +2083,8 @@ jobs:
             *.img
             module_compat.txt
             Module.symvers
+            source_revision.txt
+            config_vs_stock.txt
           compression-level: 9
 
       - name: 上传补丁冲突文件
