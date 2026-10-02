@@ -141,6 +141,34 @@ for d, marker in (("kernelsu", "kernel"), ("susfs4ksu", "kernel_patches"), ("dev
     check(f"{d}/ 存在且有 SOURCE.txt",
           os.path.isdir(os.path.join(p, marker)) and os.path.isfile(os.path.join(p, "SOURCE.txt")))
 
+# ---------- 6b. vendored 源码完整性(Windows 拷贝会把 symlink 变成文本文件 → 编译找不到 uapi 头) ----------
+uapi = os.path.join(R, "kernelsu", "kernel", "include", "uapi", "app_profile.h")
+check("kernelsu/kernel/include/uapi/ 是真实目录(不是 Windows 还原的 symlink 文本文件)",
+      os.path.isfile(uapi), uapi)
+check("kernelsu/manager/.../cpp/uapi/ 已实体化",
+      os.path.isfile(os.path.join(R, "kernelsu", "manager", "app", "src", "main", "cpp", "uapi", "app_profile.h")))
+
+mangled = []
+for d in ("kernelsu", "susfs4ksu", "device"):
+    for root, dirs, files in os.walk(os.path.join(R, d)):
+        dirs[:] = [x for x in dirs if x != ".git"]
+        for f in files:
+            fp = os.path.join(root, f)
+            try:
+                if os.path.getsize(fp) >= 100:
+                    continue
+                with open(fp, encoding="utf-8", errors="ignore") as fh:
+                    c = fh.read().strip()
+            except OSError:
+                continue
+            if c.startswith(("../", "./")) and "\n" not in c and c.replace("/", "").replace(".", "").isalnum():
+                mangled.append((os.path.relpath(fp, R), c))
+check("没有『内容为相对路径的小文件』(symlink 被 Windows 还原的残留)", not mangled, str(mangled[:5]))
+
+for d, minimum in (("kernelsu", 595), ("susfs4ksu", 51), ("device/meizu21", 1728)):
+    n = sum(len(fs) for _, _, fs in os.walk(os.path.join(R, d)))
+    check(f"{d}/ 文件数 >= {minimum}(防再次 vendoring 漏文件)", n >= minimum, f"实际 {n}")
+
 big, total, count = [], 0, 0
 for root, dirs, files in os.walk(R):
     dirs[:] = [d for d in dirs if d != ".git"]

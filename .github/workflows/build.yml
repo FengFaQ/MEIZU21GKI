@@ -683,6 +683,18 @@ jobs:
                   echo "内置源码已初始化为工作区本地 git 仓库(Kbuild 的版本号/submodule 检查需要)"
                 fi
                 ln -sfn "$KSU_SRC/kernel" common/drivers/kernelsu
+                # 保险: 上游把 kernel/include/uapi 和 manager/app/src/main/cpp/uapi 做成 symlink 指向根 uapi/,
+                # 在 Windows 上检出/拷贝时会退化成"内容是相对路径的小文本文件" → 编译时
+                # policy/app_profile.h 找不到 "uapi/app_profile.h"。这里就地还原成 symlink。
+                for _link in "$KSU_SRC/kernel/include/uapi" "$KSU_SRC/manager/app/src/main/cpp/uapi"; do
+                  if [ -f "$_link" ] && [ ! -d "$_link" ]; then
+                    _target=$(cat "$_link")
+                    if [ -d "$KSU_SRC/uapi" ]; then
+                      rm -f "$_link" && ln -sfn "$_target" "$_link" \
+                        && echo "已还原 symlink: $_link -> $_target"
+                    fi
+                  fi
+                done
                 grep -q "kernelsu" common/drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> common/drivers/Makefile
                 grep -q "drivers/kernelsu/Kconfig" common/drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' common/drivers/Kconfig
                 echo "KSU_SRC_DIR=$KSU_SRC" >> $GITHUB_ENV

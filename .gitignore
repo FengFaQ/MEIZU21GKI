@@ -9,8 +9,9 @@ kernel_workspace/
 *.tmp
 __pycache__/
 *.py[cod]
-.vs/
-.idea/
-.vscode/
-.DS_Store
-Thumbs.db
+# IDE/OS 规则只作用于仓库根, 不能递归影响 vendored 源码(上游 kernelsu/kernel/.vscode 里有文件)
+/.vs/
+/.idea/
+/.vscode/
+/.DS_Store
+/Thumbs.db
