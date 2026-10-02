@@ -1609,6 +1609,20 @@ jobs:
             fi
           fi
 
+      # A 方案: 补上"原厂(闭源)内核多导出、AOSP ACK 没有"的私有符号:
+      #   scsi_execute_cmd_len(ufs_qcom.ko 首阶段依赖) / reclaim_pages / pm_system_irq_wakeup /
+      #   mem_cgroup_id_put2 / wait_spam_info / 12 个 vendor hook(__tracepoint_android_vh_*)
+      # 依据: 设备模块 __versions + 模块重定位类型(tools/symbol_ref_kind.py) + 原厂内核 BTF
+      # ⚠ 必须独立成步: "编译内核"在容器里执行, 容器内看不到 $GITHUB_WORKSPACE/tools。
+      - name: KMI 兼容层 (A 方案, 补私有符号)
+        if: hashFiles('device/meizu21/module_kmi_manifest.txt') != ''
+        run: |
+          set -e
+          : "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"
+          echo "KERNEL_ROOT=$KERNEL_ROOT"
+          python3 "$GITHUB_WORKSPACE/tools/apply_kmi_shim.py" --kernel-root "$KERNEL_ROOT/common"
+          git -C "$KERNEL_ROOT/common" diff --stat 2>/dev/null | tail -12 || true
+
       - name: 编译内核
         id: compile_kernel
         uses: nick-fields/retry@v4
@@ -1677,14 +1691,6 @@ jobs:
                   LTO_FLAG="--lto=${{ inputs.lto_mode }}"
                 fi
                 echo "LTO_FLAG=$LTO_FLAG"
-                # A 方案: 补上"原厂(闭源)内核多导出、AOSP ACK 没有"的私有符号
-                #   scsi_execute_cmd_len(ufs_qcom.ko 首阶段依赖) / reclaim_pages /
-                #   pm_system_irq_wakeup / mem_cgroup_id_put2 / wait_spam_info /
-                #   12 个 vendor hook(__tracepoint_android_vh_*)
-                # 依据: 设备模块 __versions + 模块重定位类型(tools/symbol_ref_kind.py) + 原厂内核 BTF
-                if [ -f "$GITHUB_WORKSPACE/device/meizu21/module_kmi_manifest.txt" ]; then
-                  python3 "$GITHUB_WORKSPACE/tools/apply_kmi_shim.py" --kernel-root "$KERNEL_ROOT/common" || exit 1
-                fi
                 tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
                 strings ./bazel-bin/common/kernel_aarch64/Image | grep 'Linux version'
               fi
@@ -1833,7 +1839,7 @@ jobs:
           SRC_DIR="$KERNEL_ROOT/bazel-bin/common/kernel_aarch64"
           IMG="$SRC_DIR/Image"
           SV="$SRC_DIR/Module.symvers"
-          VM=$(find "$KERNEL_ROOT" -maxdepth 6 -name vmlinux -type f 2>/dev/null | head -1)
+          VM=$(find -L "$KERNEL_ROOT" -maxdepth 6 -name vmlinux -type f 2>/dev/null | head -1)
           echo "Image=$IMG"
           echo "vmlinux=${VM:-未找到}"
           echo "Module.symvers=$SV"
