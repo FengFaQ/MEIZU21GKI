@@ -1,0 +1,87 @@
+编译尝试: 1
+开始时间: 2026-10-02T08:31:21Z
+当前 KSU 最新提交日期: 未知
+当前 SUSFS 最新提交日期: 2026-09-26 01:48:27 +0800
++ cd /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25
++ sed -i s/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/ ./common/build.config.gki.aarch64
++ sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
++ sed -i /KMI_SYMBOL_LIST_STRICT_MODE/d ./common/build.config.gki.aarch64
++ '[' -f build/build.sh ']'
++ FRAG=common/arch/arm64/configs/ksu.fragment
++ diff /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ grep '^>'
++ sed 's/^> //; s/^[[:space:]]*//'
++ true
++ cp /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ echo '=== KSU Fragment 内容 ==='
+=== KSU Fragment 内容 ===
++ cat common/arch/arm64/configs/ksu.fragment
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_KSU=y
+CONFIG_TRIM_UNUSED_KSYMS=n
+CONFIG_PANIC_ON_OOPS=n
+CONFIG_PANIC_TIMEOUT=30
+
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
++ echo =========================
+=========================
++ FRAG_FLAG=
++ '[' -s common/arch/arm64/configs/ksu.fragment ']'
++ FRAG_FLAG=--defconfig_fragment=//common:arch/arm64/configs/ksu.fragment
++ '[' none = auto ']'
++ LTO_FLAG=--lto=none
++ echo LTO_FLAG=--lto=none
+LTO_FLAG=--lto=none
++ tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=none --defconfig_fragment=//common:arch/arm64/configs/ksu.fragment //common:kernel_aarch64_dist
+Extracting Bazel installation...
+Starting local Bazel server and connecting to it...
+INFO: Invocation ID: 1458289c-0830-4ad0-89db-4ac3fcd8d1f7
+Loading: 
+Loading: 
+Loading: 1 packages loaded
+Loading: 1 packages loaded
+    currently loading: common
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded)
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded, 0 targets configured)
+Analyzing: target //common:kernel_aarch64_dist (52 packages loaded, 4374 targets configured)
+Analyzing: target //common:kernel_aarch64_dist (56 packages loaded, 53494 targets configured)
+INFO: Analyzed target //common:kernel_aarch64_dist (56 packages loaded, 93587 targets configured).
+ checking cached actions
+INFO: Found 1 target...
+[0 / 7] [Prepa] BazelWorkspaceStatusAction stable-status.txt ... (4 actions, 2 running)
+[151 / 422] Creating config_tags @//common:kernel_aarch64_env; 0s remote-cache, processwrapper-sandbox
+[373 / 423] checking cached actions
+[377 / 423] checking cached actions
+[400 / 423] Creating symlinks to @//build/kernel:hermetic-tools [for tool]; 0s remote-cache, processwrapper-sandbox ... (3 actions running)
+[400 / 423] Creating symlinks to @//build/kernel:hermetic-tools [for tool]; 1s remote-cache, processwrapper-sandbox ... (4 actions running)
+[402 / 423] Creating wrapper for rsync: @//build/kernel:hermetic-tools [for tool]; 3s remote-cache, processwrapper-sandbox ... (2 actions running)
+[404 / 423] Executing genrule //build/kernel:gki_certification_tools; 0s remote-cache, processwrapper-sandbox ... (2 actions running)
+[405 / 423] Executing genrule //build/kernel:gki_certification_tools; 1s remote-cache, processwrapper-sandbox
+[406 / 423] Executing genrule //build/kernel:gki_certification_tools; 2s remote-cache, processwrapper-sandbox ... (3 actions, 1 running)
+[409 / 423] [Prepa] Creating abi_symbollist.raw @//common:kernel_aarch64_raw_kmi_symbol_list
+[411 / 423] [Prepa] Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config
+[411 / 423] Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config; 1s local
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22: Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config failed: (Exit 1): bash failed: error executing KernelConfig command (from target //common:kernel_aarch64_config) /bin/bash -c ... (remaining 1 argument skipped)
+.config:7455:warning: override: KSU_SUSFS changes choice state
+ERROR: @//common:kernel_aarch64_config: 
+    CONFIG_TRIM_UNUSED_KSYMS: actual '', expected 'CONFIG_TRIM_UNUSED_KSYMS=n' from common/arch/arm64/configs/ksu.fragment.
+    CONFIG_PANIC_ON_OOPS: actual '', expected 'CONFIG_PANIC_ON_OOPS=n' from common/arch/arm64/configs/ksu.fragment.
+    Are they declared in Kconfig?
+Target //common:kernel_aarch64_dist failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+INFO: Elapsed time: 39.661s, Critical Path: 12.60s
+INFO: 412 processes: 396 internal, 1 local, 15 processwrapper-sandbox.
+ERROR: Build did NOT complete successfully
++ exit 1
+结束时间: 2026-10-02T08:32:01Z
+退出码: 1
