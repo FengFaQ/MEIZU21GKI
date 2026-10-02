@@ -23,6 +23,10 @@ W = os.path.join(R, ".github", "workflows")
 EXPECT_EXTRA = [
     "# CONFIG_TRIM_UNUSED_KSYMS is not set",
     "# CONFIG_PANIC_ON_OOPS is not set",
+    "# 允许 adb shell dmesg 读取内核日志(否则 user 版构建下 shell 无权读, 排障只能靠抢 512K",
+    "# 环形缓冲区的开机瞬间 —— 本次黑屏问题正是靠这个手段才定位到 msm_kgsl 的符号 CRC 失配)。",
+    "# 只影响权限位, 不涉及任何导出符号/KMI。",
+    "# CONFIG_SECURITY_DMESG_RESTRICT is not set",
     "CONFIG_PANIC_TIMEOUT=30",
 ]
 fail = 0
