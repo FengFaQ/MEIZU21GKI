@@ -1,0 +1,170 @@
+编译尝试: 1
+开始时间: 2026-10-02T08:36:38Z
+当前 KSU 最新提交日期: 未知
+当前 SUSFS 最新提交日期: 2026-09-26 01:48:27 +0800
++ cd /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25
++ sed -i s/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/ ./common/build.config.gki.aarch64
++ sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
++ sed -i /KMI_SYMBOL_LIST_STRICT_MODE/d ./common/build.config.gki.aarch64
++ '[' -f build/build.sh ']'
++ FRAG=common/arch/arm64/configs/ksu.fragment
++ diff /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ grep '^>'
++ sed 's/^> //; s/^[[:space:]]*//'
++ true
++ cp /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ echo '=== KSU Fragment 内容 ==='
+=== KSU Fragment 内容 ===
++ cat common/arch/arm64/configs/ksu.fragment
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_KSU=y
+# CONFIG_TRIM_UNUSED_KSYMS is not set
+# CONFIG_PANIC_ON_OOPS is not set
+CONFIG_PANIC_TIMEOUT=30
+
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+CONFIG_KSU_SUSFS_ENABLE_LOG=y
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
++ echo =========================
+=========================
++ FRAG_FLAG=
++ '[' -s common/arch/arm64/configs/ksu.fragment ']'
++ FRAG_FLAG=--defconfig_fragment=//common:arch/arm64/configs/ksu.fragment
++ '[' none = auto ']'
++ LTO_FLAG=--lto=none
++ echo LTO_FLAG=--lto=none
+LTO_FLAG=--lto=none
++ tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=none --defconfig_fragment=//common:arch/arm64/configs/ksu.fragment //common:kernel_aarch64_dist
+Extracting Bazel installation...
+Starting local Bazel server and connecting to it...
+INFO: Invocation ID: 18994719-2b09-4771-871f-d4ff1cb5ba2f
+Loading: 
+Loading: 
+Loading: 1 packages loaded
+Loading: 1 packages loaded
+    currently loading: common
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded)
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded, 0 targets configured)
+Analyzing: target //common:kernel_aarch64_dist (56 packages loaded, 30123 targets configured)
+INFO: Analyzed target //common:kernel_aarch64_dist (56 packages loaded, 93587 targets configured).
+ checking cached actions
+INFO: Found 1 target...
+[0 / 7] [Prepa] BazelWorkspaceStatusAction stable-status.txt ... (2 actions, 0 running)
+[260 / 414] [Prepa] Creating symlinks to in-tree tools @//build/kernel:hermetic-tools/mkfs.erofs [for tool]
+[371 / 414] checking cached actions
+[400 / 423] Creating symlinks to @//build/kernel:hermetic-tools [for tool]; 1s remote-cache, processwrapper-sandbox ... (4 actions running)
+[404 / 423] checking cached actions
+[405 / 423] Executing genrule //build/kernel:gki_certification_tools; 1s remote-cache, processwrapper-sandbox ... (2 actions, 1 running)
+[406 / 423] Executing genrule //build/kernel:gki_certification_tools; 2s remote-cache, processwrapper-sandbox ... (2 actions, 1 running)
+[406 / 423] Executing genrule //build/kernel:gki_certification_tools; 3s remote-cache, processwrapper-sandbox ... (3 actions, 2 running)
+[407 / 423] Executing genrule //build/kernel:gki_certification_tools; 4s remote-cache, processwrapper-sandbox ... (3 actions running)
+[409 / 423] Creating abi_symbollist.raw @//common:kernel_aarch64_raw_kmi_symbol_list; 1s remote-cache, processwrapper-sandbox
+[411 / 423] Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config; 0s local
+INFO: From Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config:
+.config:7455:warning: override: KSU_SUSFS changes choice state
+[412 / 423] [Prepa] Building UAPI kernel headers kernel_aarch64_uapi_headers
+[412 / 423] Preparing for module build (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_modules_prepare; 1s local ... (3 actions running)
+[412 / 423] Preparing for module build (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_modules_prepare; 11s local ... (3 actions running)
+[413 / 423] Preparing for module build (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_modules_prepare; 28s local ... (2 actions running)
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 31s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 42s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 72s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 132s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 192s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 252s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 312s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 372s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 432s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 492s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 552s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 612s local
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22: Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64 failed: (Exit 2): bash failed: error executing KernelBuild command (from target //common:kernel_aarch64) /bin/bash -c ... (remaining 1 argument skipped)
+In file included from /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/drivers/kernelsu/core/init.c:17:
+In file included from /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/drivers/kernelsu/policy/allowlist.h:6:
+/home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/drivers/kernelsu/policy/app_profile.h:4:10: fatal error: 'uapi/app_profile.h' file not found
+#include "uapi/app_profile.h"
+         ^~~~~~~~~~~~~~~~~~~~
+1 error generated.
+make[4]: *** [/home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/scripts/Makefile.build:250: drivers/kernelsu/core/init.o] Error 1
+make[3]: *** [/home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/scripts/Makefile.build:500: drivers/kernelsu] Error 2
+make[3]: *** Waiting for unfinished jobs....
+make[2]: *** [/home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/scripts/Makefile.build:500: drivers] Error 2
+make[1]: *** [/home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/Makefile:2055: .] Error 2
+make: *** [Makefile:256: __sub-make] Error 2
+-- ReSukiSU version code: 30701
+-- ReSukiSU version name: v4.1.0-75496fc5@ReSukiSU
+-- Supported Unofficial Manager: MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU 
+-- KERNEL_VERSION: 6.1
+-- KERNEL_TYPE: GKI 2.0
+-- ReSukiSU: using SuSFS Inline hook
+-- You are using SUSFS, if you face any issues, please MAKE SURE you are using LATEST SUSFS KERNEL SIDE before submit issue to ReSukiSU.
+-- We keep tracking simonpunk's latest changes, and don't maintain ANY backward compatibility for old version of susfs.
+-- ReSukiSU/susfs_inline: ksu_handle_setresuid found
+-- ReSukiSU/susfs_inline: ksu_handle_execveat found
+-- ReSukiSU/susfs_inline: ksu_handle_faccessat found
+-- ReSukiSU/susfs_inline: ksu_handle_sys_read found
+-- ReSukiSU/susfs_inline: ksu_handle_stat found
+-- ReSukiSU/susfs_inline: ksu_handle_sys_reboot found
+-- ReSukiSU/susfs_inline: ksu_handle_input_handle_event found
+-- ReSukiSU/susfs_feature_check: selinux_hide manual hook found
+
+-- SUSFS_VERSION: v2.3.0
+-- ReSukiSU/compat: current_sid found
+-- ReSukiSU/compat: selinux_state found
+-- ReSukiSU/compat: strncpy found
+-- ReSukiSU/compat: kernel_read found
+-- ReSukiSU/compat: kernel_write found
+-- ReSukiSU/compat: selinux_inode found
+-- ReSukiSU/compat: selinux_cred found
+-- ReSukiSU/compat: seccomp_filter_count found
+-- ReSukiSU/compat: put_seccomp_filter found
+-- ReSukiSU/compat: security_inode_init_security_anon found
+-- ReSukiSU/compat: anon_inode_getfd_secure found
+-- ReSukiSU/compat: file_inode() found
+-- ReSukiSU/compat: __flush_dcache_area not found
+-- ReSukiSU/compat: policy_mutex found
+-- ReSukiSU/compat: ns_get_path found
+-- ReSukiSU/compat: modern dentry_open found
+-- ReSukiSU/compat: ext4_unregister_sysfs found
+-- ReSukiSU/compat: f_op->read_iter found
+-- ReSukiSU/compat: iterate_dir found
+-- ReSukiSU/compat: modern static_key_interface found
+-- ReSukiSU/compat: d_inode found
+-- ReSukiSU/compat: inode_lock found
+-- ReSukiSU/compat: modern errno file found
+-- ReSukiSU/compat: minmax.h found
+-- ReSukiSU/compat: overflow.h found
+-- ReSukiSU/compat: modern proc ns header file found
+-- ReSukiSU/compat: android spec POLICYDB_CONFIG_ANDROID_NETLINK_ROUTE found!!
+-- ReSukiSU/compat: android spec POLICYDB_CONFIG_ANDROID_NETLINK_GETNEIGH found!!
+-- ReSukiSU/compat: found modern selinux policydb
+-- ReSukiSU/compat: found sidtab as reference
+-- ReSukiSU/compat: found hlist in security_hook_list
+-- ReSukiSU/compat: found required provide lsm name
+-- ReSukiSU/compat: found selinux status variables in selinux_state
+-- ReSukiSU/compat: found selinux_policy struct
+-- ReSukiSU/compat: found hashtabs is a struct instead of pointer
+-- ReSukiSU/compat: found symtab_search function
+-- ReSukiSU/compat: found hashtab_key_params function
+-- ReSukiSU/compat: found filename_trans_key function
+-- ReSukiSU/compat: found security_add_hooks
+-- ReSukiSU/compat: ksu_handle_post_execve hook not found
+-- ReSukiSU/compat: key need perm as enum found
+-- ReSukiSU/compat: modern dentry_open found
+Target //common:kernel_aarch64_dist failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22 Middleman _middlemen/common_Skernel_Uaarch64_Udist-runfiles failed: (Exit 2): bash failed: error executing KernelBuild command (from target //common:kernel_aarch64) /bin/bash -c ... (remaining 1 argument skipped)
+INFO: Elapsed time: 692.052s, Critical Path: 670.96s
+INFO: 415 processes: 396 internal, 3 local, 16 processwrapper-sandbox.
+ERROR: Build did NOT complete successfully
++ exit 1
+结束时间: 2026-10-02T08:48:11Z
+退出码: 1
