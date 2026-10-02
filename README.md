@@ -100,30 +100,36 @@ git -C $f worktree remove $tmp --force         # 再 remove
 
 ### 2) 能到第一屏，2~3 秒后自动重启（连参考镜像也一样）
 
-设备的厂商模块目录名就是内核 release 串：
+设备的模块布局决定了 release 串必须与原厂一致（否则部分模块查不到）：
 
-```
-/system_dlkm/lib/modules/6.1.25-android14-11-maybe-dirty/...     ← 原厂
-```
+| 位置 | 布局 | 受 release 串影响 |
+| --- | --- | --- |
+| `vendor_boot` ramdisk | `/lib/modules/*.ko` 扁平，`modules.dep` 写绝对路径 | ❌ |
+| `vendor_dlkm` | `/lib/modules/*.ko` 扁平 + `modules.load`(431 项) | ❌ |
+| `system_dlkm` | `/system_dlkm/lib/modules/<release>/`，`modules.load`(57 项) | ✅（内容是蓝牙/网络等） |
 
-`modprobe` 按 `uname -r` 去找 `/lib/modules/$(uname -r)/`，**release 串不一致 → 一个模块都找不到**
-→ 显示/触摸/存储驱动全缺 → 看门狗 2~3 秒后重启。而 `build.yml` 在 `version` 为空时会走
-「KMI 伪装」分支拼出 `-android14-11-g<sha>-ab<随机>-4k`：
+原厂目录名就是 `/system_dlkm/lib/modules/6.1.25-android14-11-maybe-dirty/`。
+`build.yml` 在 `version` 为空时会走「KMI 伪装」分支拼出 `-android14-11-g<sha>-ab<随机>-4k`：
 
 | 内核 | release 串 |
 | --- | --- |
 | 原厂（能开机） | `6.1.25-android14-11-maybe-dirty` |
-| 参考镜像 | `6.1.25-Keirui-huahuahua`（所以它也重启） |
+| 参考镜像 | `6.1.25-Keirui-huahuahua` |
 | 本仓库 run #4 | `6.1.25-android14-11-g0d89215310919-ab10017554-4k` |
 
 修法：`meizu21.yml` / `meizu21-bisect.yml` 固定
 `version: "6.1.25-android14-11-maybe-dirty"`（= 原厂 `CONFIG_LOCALVERSION`），
 并在编译后新增步骤**硬校验**版本串，不一致直接 fail，避免再产出「刷了必挂」的包。
 
+> ⚠️ 注意：release 串**不足以单独解释**「卡第一屏 2~3 秒后重启」——`vendor_boot`/`vendor_dlkm`
+> 的模块是扁平绝对路径，与 release 无关。重启的可疑顺序是：
+> ① `modules.load` 里某模块加载失败（缺符号 / CRC 不一致）→ 第一阶段 init FATAL → 重启；
+> ② KSU/SUSFS 补丁在早期引导崩（用 `meizu21-bisect` 的 L1/L0 区分）；③ 其他。
+> 判据看下面 KMI 校验的 `module_compat.txt`。
+
 > 注：模块 `.modinfo` 里的 vermagic 是 `6.1.25 SMP preempt mod_unload modversions aarch64`
 > （不带 localversion）。内核 `same_magic()` 在模块带 `__versions`（`CONFIG_MODVERSIONS=y`）时
-> 只比对第一个空格之后的部分，所以**版本串不参与模块校验，符号 CRC 才是真校验**；
-> 但 release 串决定了模块**查找路径**，所以仍必须与原厂完全一致。
+> 只比对第一个空格之后的部分，所以**版本串不参与模块校验，符号 CRC 才是真校验**。
 
 ### 不刷机验证「模块能不能加载」
 

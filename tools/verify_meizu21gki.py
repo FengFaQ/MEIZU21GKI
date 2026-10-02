@@ -217,6 +217,8 @@ if os.path.isfile(man):
 check("device/meizu21/module_kmi_manifest.txt 存在且规模合理",
       need >= 2800 and defs >= 800, f"NEED={need} DEF={defs}")
 check("tools/check_module_kmi.py 存在", os.path.isfile(os.path.join(R, "tools", "check_module_kmi.py")))
+for _t in ("extract_module_kmi.py", "analyze_boot_image.py", "check_loadlist.py"):
+    check(f"tools/{_t} 存在(诊断工具随仓库走)", os.path.isfile(os.path.join(R, "tools", _t)))
 check("build.yml: 编译后跑厂商模块 KMI 校验",
       "tools/check_module_kmi.py" in bblob and "module_compat.txt" in bblob)
 check("build.yml: KMI 报告与 symvers 随产物上传",
