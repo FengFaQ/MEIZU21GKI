@@ -1677,6 +1677,14 @@ jobs:
                   LTO_FLAG="--lto=${{ inputs.lto_mode }}"
                 fi
                 echo "LTO_FLAG=$LTO_FLAG"
+                # A 方案: 补上"原厂(闭源)内核多导出、AOSP ACK 没有"的私有符号
+                #   scsi_execute_cmd_len(ufs_qcom.ko 首阶段依赖) / reclaim_pages /
+                #   pm_system_irq_wakeup / mem_cgroup_id_put2 / wait_spam_info /
+                #   12 个 vendor hook(__tracepoint_android_vh_*)
+                # 依据: 设备模块 __versions + 模块重定位类型(tools/symbol_ref_kind.py) + 原厂内核 BTF
+                if [ -f "$GITHUB_WORKSPACE/device/meizu21/module_kmi_manifest.txt" ]; then
+                  python3 "$GITHUB_WORKSPACE/tools/apply_kmi_shim.py" --kernel-root "$KERNEL_ROOT/common" || exit 1
+                fi
                 tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast $LTO_FLAG $FRAG_FLAG //common:kernel_aarch64_dist || exit 1
                 strings ./bazel-bin/common/kernel_aarch64/Image | grep 'Linux version'
               fi
@@ -1814,6 +1822,43 @@ jobs:
       #     ./patch
       #     rm -rf Image
       #     mv oImage Image
+
+      # B 方案: 把设备厂商模块 __versions 里期望的符号 CRC 对齐进内核 Image(改 __kcrctab)。
+      # 为什么安全: module_layout 本来就一致, 核心结构体布局经 BTF 逐成员对比也一致
+      # (tools/btf_diff.py), 差异只是"版本戳"; 对齐后厂商模块可原样加载, 不必改 vendor 分区。
+      - name: KMI CRC 对齐 (B 方案)
+        if: hashFiles('device/meizu21/module_kmi_manifest.txt') != ''
+        run: |
+          set -e
+          SRC_DIR="$KERNEL_ROOT/bazel-bin/common/kernel_aarch64"
+          IMG="$SRC_DIR/Image"
+          SV="$SRC_DIR/Module.symvers"
+          VM=$(find "$KERNEL_ROOT" -maxdepth 6 -name vmlinux -type f 2>/dev/null | head -1)
+          echo "Image=$IMG"
+          echo "vmlinux=${VM:-未找到}"
+          echo "Module.symvers=$SV"
+          if [ ! -f "$IMG" ] || [ ! -f "$SV" ] || [ -z "$VM" ]; then
+            echo "::error title=KMI CRC 对齐无法进行::缺 Image/Module.symvers/vmlinux, 拒绝产出可能卡第一屏的镜像"
+            exit 1
+          fi
+          chmod +w "$IMG" "$SV" 2>/dev/null || true
+          python3 "$GITHUB_WORKSPACE/tools/patch_kcrctab.py" \
+            --image "$IMG" --vmlinux "$VM" --symvers "$SV" \
+            --manifest "$GITHUB_WORKSPACE/device/meizu21/module_kmi_manifest.txt" \
+            --symvers-out "$GITHUB_WORKSPACE/Module.symvers.patched" \
+            --report "$GITHUB_WORKSPACE/patch_crc_report.txt"
+          grep -q '回读校验' "$GITHUB_WORKSPACE/patch_crc_report.txt" || { echo "::error::CRC 对齐未产生回读校验"; exit 1; }
+          if grep -q '回读校验.*有失败' "$GITHUB_WORKSPACE/patch_crc_report.txt"; then
+            echo "::error title=CRC 写入回读失败::见 patch_crc_report.txt"
+            exit 1
+          fi
+          D="$KERNEL_ROOT/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist"
+          [ -d "$D" ] && cp -f "$IMG" "$D/Image" || true
+          if [ -f "$SRC_DIR/Image.lz4" ] && command -v lz4 >/dev/null 2>&1; then
+            lz4 -f -l -12 "$IMG" "$SRC_DIR/Image.lz4" || true
+          fi
+          echo "=== KMI CRC 对齐报告(节选) ==="
+          head -45 "$GITHUB_WORKSPACE/patch_crc_report.txt"
 
       - name: 准备 Boot 镜像
         run: |
@@ -2083,6 +2128,8 @@ jobs:
             *.img
             module_compat.txt
             Module.symvers
+            Module.symvers.patched
+            patch_crc_report.txt
             source_revision.txt
             config_vs_stock.txt
           compression-level: 9

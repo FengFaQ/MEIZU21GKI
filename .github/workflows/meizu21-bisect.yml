@@ -17,12 +17,6 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  # ★ 改动本文件即触发一次 L0(禁用KSU = 纯 GKI)构建 —— 便于"改完立刻验证",
-  #   不必等人到网页点 Run workflow。push 事件没有 inputs, 下面 `with:` 全部用 || 落默认值。
-  push:
-    branches: [ "main" ]
-    paths:
-      - '.github/workflows/meizu21-bisect.yml'
   workflow_dispatch:
     inputs:
       label:
