@@ -223,9 +223,17 @@ check("build.yml: KMI 报告与 symvers 随产物上传",
       "module_compat.txt" in bblob and "cp \"$SYMVERS\" \"$GITHUB_WORKSPACE/Module.symvers\"" in bblob)
 check("build.yml: KMI 校验失败时会告警",
       "厂商模块可能加载失败" in bblob)
-# KERNEL_ROOT 来自 $GITHUB_ENV → 只能用 shell 变量; 写成 ${{ env.KERNEL_ROOT }} 会静默取到空串
-check("build.yml: 新步骤用 shell 变量 $KERNEL_ROOT(不是 ${{ env.KERNEL_ROOT }})",
-      "${{ env.KERNEL_ROOT }}" not in bblob and ': "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"' in bblob)
+# KERNEL_ROOT 来自 $GITHUB_ENV。实务上 `working-directory: ${{ env.KERNEL_ROOT }}` 能解析
+# (全流水线 20 处都这么用且构建成功), 但新步骤统一用 shell 变量 + 兜底, 更稳且可读。
+new_steps = {str(s.get("name")): s for s in steps_of(b)
+             if "版本串" in str(s.get("name")) or "KMI 兼容" in str(s.get("name"))}
+check("build.yml: 版本串校验 / KMI 校验步骤存在", len(new_steps) == 2, str(list(new_steps)))
+_bad = [n for n, s in new_steps.items() if "${{ env.KERNEL_ROOT }}" in str(s.get("run", ""))]
+check("build.yml: 新步骤内不用 ${{ env.KERNEL_ROOT }}(用 shell 变量)",
+      not _bad, str(_bad))
+check("build.yml: 新步骤有 KERNEL_ROOT 兜底默认值",
+      all(': "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"' in str(s.get("run", ""))
+          for s in new_steps.values()))
 
 print(f"\nRESULT: {'ALL CHECKS PASSED' if fail == 0 else f'{fail} CHECK(S) FAILED'}")
 sys.exit(1 if fail else 0)

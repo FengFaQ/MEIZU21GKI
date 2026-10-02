@@ -1801,8 +1801,8 @@ jobs:
         if: always()
         run: |
           IMG=""
-          # 注意: KERNEL_ROOT 是 $GITHUB_ENV 写出来的 → 只有 shell 变量 $KERNEL_ROOT 一定可用,
-          # 不要用 ${{ env.KERNEL_ROOT }}(env 上下文未必包含 GITHUB_ENV 的值)
+          # 注意: KERNEL_ROOT 是 $GITHUB_ENV 写出来的 → 这里统一用 shell 变量 $KERNEL_ROOT
+          # (working-directory 里那种 env 上下文的写法在本步骤内不用, 免得依赖上下文解析)
           : "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"
           for c in "$KERNEL_ROOT/bazel-bin/common/kernel_aarch64/Image" \
                    "$KERNEL_ROOT/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image"; do
