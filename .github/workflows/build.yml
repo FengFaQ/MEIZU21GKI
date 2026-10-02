@@ -665,10 +665,23 @@ jobs:
               ;;
             "ReSukiSU")
               # 自包含: 仓库内已 vendored ReSukiSU 源码 (kernelsu/, 元数据见 kernelsu/SOURCE.txt)
-              # 接线方式与其官方 setup.sh 完全一致: symlink + drivers/Makefile + drivers/Kconfig
+              # 其 kernel/Kbuild 要求存在 ../.git(submodule 检查) 且用 git 生成版本号 →
+              # 在 CI 工作区就地 git init 一个最小仓库(只在本次运行有效, 不进我们的 git 历史)
               if [ -d "$GITHUB_WORKSPACE/kernelsu/kernel" ]; then
                 echo "添加 ReSukiSU (仓库内置 kernelsu/, 手动集成法)..."
                 KSU_SRC="$GITHUB_WORKSPACE/kernelsu"
+                if [ ! -e "$KSU_SRC/.git" ]; then
+                  (
+                    cd "$KSU_SRC"
+                    git init -q -b main
+                    git config user.email "ci@meizu21gki.local"
+                    git config user.name "MEIZU21GKI CI"
+                    git add -A
+                    git commit -q -m "vendored ReSukiSU snapshot ($(sed -n 's/^commit=//p' SOURCE.txt | head -1))"
+                    git tag v4.1.0
+                  )
+                  echo "内置源码已初始化为工作区本地 git 仓库(Kbuild 的版本号/submodule 检查需要)"
+                fi
                 ln -sfn "$KSU_SRC/kernel" common/drivers/kernelsu
                 grep -q "kernelsu" common/drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> common/drivers/Makefile
                 grep -q "drivers/kernelsu/Kconfig" common/drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' common/drivers/Kconfig
@@ -688,12 +701,12 @@ jobs:
               ;;
           esac
 
-          # KSU 来源可能是: 联网克隆的 $KERNEL_ROOT/KernelSU (.git) 或 仓库内置 kernelsu/ (SOURCE.txt)
+          # KSU 来源可能是: 仓库内置 kernelsu/ (有 SOURCE.txt) 或 联网克隆的 $KERNEL_ROOT/KernelSU (.git)
           KSU_DIR="${KSU_SRC_DIR:-$KERNEL_ROOT/KernelSU}"
-          if [ -d "$KSU_DIR/.git" ]; then
-            KSU_LATEST_COMMIT_DATE=$(git -C "$KSU_DIR" log -1 --date=format:'%Y-%m-%d %H:%M:%S %z' --format='%cd')
-          elif [ -f "$KSU_DIR/SOURCE.txt" ]; then
+          if [ -f "$KSU_DIR/SOURCE.txt" ]; then
             KSU_LATEST_COMMIT_DATE=$(sed -n 's/^date=//p' "$KSU_DIR/SOURCE.txt" | head -1)
+          elif [ -d "$KSU_DIR/.git" ]; then
+            KSU_LATEST_COMMIT_DATE=$(git -C "$KSU_DIR" log -1 --date=format:'%Y-%m-%d %H:%M:%S %z' --format='%cd')
           else
             KSU_LATEST_COMMIT_DATE="未知"
           fi
@@ -814,12 +827,12 @@ jobs:
             # KSU 与 SUSFS 提交都取本次构建实际用的来源(内置快照读 SOURCE.txt, 联网克隆读 git)
             local ksu_repo ksu_commit ksu_slug ksu_setup_cmd ksu_dir
             ksu_dir="${KSU_SRC_DIR:-$KERNEL_ROOT/KernelSU}"
-            if [ -d "$ksu_dir/.git" ]; then
+            if [ -f "$ksu_dir/SOURCE.txt" ]; then
+              ksu_repo=$(sed -n 's/^repo=//p' "$ksu_dir/SOURCE.txt" | head -1)
+              ksu_commit=$(sed -n 's/^commit=//p' "$ksu_dir/SOURCE.txt" | head -1)
+            elif [ -d "$ksu_dir/.git" ]; then
               ksu_repo=$(git -C "$ksu_dir" remote get-url origin | sed 's/\.git$//')
               ksu_commit=$(git -C "$ksu_dir" rev-parse HEAD)
-            else
-              ksu_repo=$(sed -n 's/^repo=//p' "$ksu_dir/SOURCE.txt" 2>/dev/null | head -1)
-              ksu_commit=$(sed -n 's/^commit=//p' "$ksu_dir/SOURCE.txt" 2>/dev/null | head -1)
             fi
             ksu_repo=${ksu_repo:-unknown}
             ksu_commit=${ksu_commit:-unknown}
@@ -827,12 +840,12 @@ jobs:
             ksu_setup_cmd="curl -LSs https://raw.githubusercontent.com/$ksu_slug/main/kernel/setup.sh | bash -s $ksu_commit"
 
             local susfs_repo susfs_branch susfs_commit
-            if [ -d "$SUSFS4KSU/.git" ]; then
+            if [ -f "$SUSFS4KSU/SOURCE.txt" ]; then
+              susfs_repo=$(sed -n 's/^repo=//p' "$SUSFS4KSU/SOURCE.txt" | head -1)
+              susfs_commit=$(sed -n 's/^commit=//p' "$SUSFS4KSU/SOURCE.txt" | head -1)
+            elif [ -d "$SUSFS4KSU/.git" ]; then
               susfs_repo=$(git -C "$SUSFS4KSU" remote get-url origin | sed 's/\.git$//')
               susfs_commit=$(git -C "$SUSFS4KSU" rev-parse HEAD)
-            else
-              susfs_repo=$(sed -n 's/^repo=//p' "$SUSFS4KSU/SOURCE.txt" 2>/dev/null | head -1)
-              susfs_commit=$(sed -n 's/^commit=//p' "$SUSFS4KSU/SOURCE.txt" 2>/dev/null | head -1)
             fi
             susfs_repo=${susfs_repo:-unknown}
             susfs_commit=${susfs_commit:-unknown}
