@@ -2049,8 +2049,10 @@ jobs:
         if: inputs.android_version == 'android13' || inputs.android_version == 'android14' || inputs.android_version == 'android15' || inputs.android_version == 'android16'
         working-directory: bootimgs
         run: |
-          gzip -n -k -f -9 ./Image > ./Image.gz
-
+          # ★ 只构建未压缩 Image 的 boot.img:
+          #   实测原厂 boot_a.img 里就是未压缩 arm64 Image(32.3MB, 开头 1f2003d5...),
+          #   我们构建出的 Image 也是未压缩的。gz/lz4 只是同一内核的不同压缩方式,
+          #   bootloader 会自动解压 —— 功能完全等价, 属于冗余产物, 不再构建。
           # os_version / os_patch_level 必须写!(Android 12 分支一直有, 13+ 分支以前漏了)
           # 头部这两项为 0 时, 部分 ABL(含魅族 21)会判定镜像非法 → 直接进 fastboot
           ANDROID_MAJOR=$(echo "${{ inputs.android_version }}" | tr -dc '0-9')
@@ -2059,22 +2061,21 @@ jobs:
           PART_SIZE=$((64 * 1024 * 1024))
           echo "mkbootimg os_version=${OS_VERSION} os_patch_level=${OS_PATCH} boot_sign=${{ inputs.boot_sign }}"
 
-          for pair in "boot.img:Image" "boot-gz.img:Image.gz" "boot-lz4.img:Image.lz4"; do
-            OUT="${pair%%:*}"; KERN="${pair##*:}"
-            $MKBOOTIMG --header_version 4 --kernel "$KERN" --output "$OUT" \
-              --os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"
-            if [ "${{ inputs.boot_sign }}" = "不签名" ]; then
-              # 与参考镜像同结构: 不加 AVB, 只把镜像零填充到分区大小
-              # (避免分区尾部残留上一次刷入的旧 AVB footer)
-              truncate -s "$PART_SIZE" "$OUT"
-              echo "$OUT: 未签名, 已零填充到 $((PART_SIZE / 1024 / 1024)) MiB"
-            else
-              $AVBTOOL add_hash_footer --partition_name boot --partition_size "$PART_SIZE" \
-                --image "$OUT" --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-              echo "$OUT: 已加 AVB hash footer"
-            fi
-            cp "./$OUT" "../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-$OUT"
-          done
+          OUT="boot.img"
+          $MKBOOTIMG --header_version 4 --kernel ./Image --output "$OUT" \
+            --os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"
+          if [ "${{ inputs.boot_sign }}" = "不签名" ]; then
+            # 与参考镜像同结构: 不加 AVB, 只把镜像零填充到分区大小
+            # (避免分区尾部残留上一次刷入的旧 AVB footer)
+            truncate -s "$PART_SIZE" "$OUT"
+            echo "$OUT: 未签名, 已零填充到 $((PART_SIZE / 1024 / 1024)) MiB"
+          else
+            $AVBTOOL add_hash_footer --partition_name boot --partition_size "$PART_SIZE" \
+              --image "$OUT" --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
+            echo "$OUT: 已加 AVB hash footer"
+          fi
+          cp "./$OUT" "../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-$OUT"
+          echo "已跳过 boot-gz.img / boot-lz4.img(与原厂同格式, 冗余)"
 
       - name: 收集补丁冲突文件
         if: always()
