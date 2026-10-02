@@ -11,6 +11,11 @@ permissions:
   contents: write
   actions: write
 
+# 与 meizu21.yml 共用一串行组: 避免同时写 release / force-push dist
+concurrency:
+  group: meizu21-build-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:

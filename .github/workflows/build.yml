@@ -1830,6 +1830,35 @@ jobs:
             fi
           fi
 
+      # 不刷机就验证"内核能不能加载厂商模块":
+      # 模块 __versions 里的符号 CRC 必须与内核 Module.symvers 一致, 否则内核拒载该模块
+      # (Unknown symbol / disagrees about version of symbol) → 缺显示/存储驱动 → 卡第一屏后重启。
+      # 清单由 tools/extract_module_kmi.py 从设备真实 .ko(vendor_boot ramdisk + system_dlkm)生成。
+      - name: 校验厂商模块 KMI 兼容性
+        if: always()
+        run: |
+          MANIFEST="$GITHUB_WORKSPACE/device/meizu21/module_kmi_manifest.txt"
+          SYMVERS=""
+          for c in "${{ env.KERNEL_ROOT }}/bazel-bin/common/kernel_aarch64/Module.symvers" \
+                   "${{ env.KERNEL_ROOT }}/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Module.symvers"; do
+            if [ -f "$c" ]; then SYMVERS="$c"; break; fi
+          done
+          if [ -z "$SYMVERS" ]; then
+            SYMVERS=$(find "${{ env.KERNEL_ROOT }}" -maxdepth 8 -name 'Module.symvers' -type f 2>/dev/null | head -1)
+          fi
+          if [ ! -f "$MANIFEST" ] || [ -z "$SYMVERS" ] || [ ! -f "$SYMVERS" ]; then
+            echo "清单(${MANIFEST:-无})或 Module.symvers(${SYMVERS:-无})缺失, 跳过 KMI 校验"
+            exit 0
+          fi
+          echo "Module.symvers: $SYMVERS"
+          cp "$SYMVERS" "$GITHUB_WORKSPACE/Module.symvers"     # 随产物上传, 便于离线核对 CRC
+          python3 "$GITHUB_WORKSPACE/tools/check_module_kmi.py" \
+            --manifest "$MANIFEST" --symvers "$SYMVERS" \
+            --report "$GITHUB_WORKSPACE/module_compat.txt"
+          if grep -q '^RESULT: FAIL' "$GITHUB_WORKSPACE/module_compat.txt"; then
+            echo "::warning title=厂商模块可能加载失败::见 module_compat.txt(随产物一起上传), 里面列出了缺失符号/CRC 不一致的符号"
+          fi
+
       - name: 准备 AnyKernel3 目录
         if: inputs.artifact_upload_mode != '上传全部'
         run: |
@@ -1961,6 +1990,8 @@ jobs:
           path: |
             *AnyKernel3.zip
             *.img
+            module_compat.txt
+            Module.symvers
           compression-level: 9
 
       - name: 上传补丁冲突文件

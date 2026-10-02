@@ -9,6 +9,11 @@ permissions:
   contents: write   # 创建 release / 提交 log / 推 dist 分支
   actions: write
 
+# 同一分支的构建串行执行: 避免两次构建同时写 release / force-push dist 分支互相覆盖
+concurrency:
+  group: meizu21-build-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches: [ "main" ]

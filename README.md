@@ -79,6 +79,62 @@ git -C $f worktree remove $tmp --force         # 再 remove
 
 ---
 
+## 实机故障的两个根因（2026-10-02 更新）
+
+刷本仓库产物出现过两类现象，根因都已定位并修掉：
+
+### 1) 刷入后直接进 fastboot（反复重启仍在 fastboot）
+
+`build.yml` 的 **Android 13+ 分支**生成 boot.img 时漏了 `--os_version` / `--os_patch_level`
+（Android 12 分支一直有），头部这两项为 0：
+
+| 镜像 | os_version 字段 |
+| --- | --- |
+| 原厂 / 参考镜像 | `14.0.0 / 2023-10`（raw `0x1c00017a`） |
+| 本仓库 run #4 | `0`（未设置） |
+
+部分 ABL（含魅族 21）会据此判镜像非法 → 直接 fastboot。修法：13+ 分支按
+`inputs.android_version` 推导 `<N>.0.0` 并写 `os_patch_level`；
+另加 `boot_sign` 开关，`不签名` = 与可启动参考镜像同结构（不加 AVB footer，
+只 `truncate` 零填充到 64 MiB，避免分区尾部残留上一次刷入的旧 AVB footer）。
+
+### 2) 能到第一屏，2~3 秒后自动重启（连参考镜像也一样）
+
+设备的厂商模块目录名就是内核 release 串：
+
+```
+/system_dlkm/lib/modules/6.1.25-android14-11-maybe-dirty/...     ← 原厂
+```
+
+`modprobe` 按 `uname -r` 去找 `/lib/modules/$(uname -r)/`，**release 串不一致 → 一个模块都找不到**
+→ 显示/触摸/存储驱动全缺 → 看门狗 2~3 秒后重启。而 `build.yml` 在 `version` 为空时会走
+「KMI 伪装」分支拼出 `-android14-11-g<sha>-ab<随机>-4k`：
+
+| 内核 | release 串 |
+| --- | --- |
+| 原厂（能开机） | `6.1.25-android14-11-maybe-dirty` |
+| 参考镜像 | `6.1.25-Keirui-huahuahua`（所以它也重启） |
+| 本仓库 run #4 | `6.1.25-android14-11-g0d89215310919-ab10017554-4k` |
+
+修法：`meizu21.yml` / `meizu21-bisect.yml` 固定
+`version: "6.1.25-android14-11-maybe-dirty"`（= 原厂 `CONFIG_LOCALVERSION`），
+并在编译后新增步骤**硬校验**版本串，不一致直接 fail，避免再产出「刷了必挂」的包。
+
+> 注：模块 `.modinfo` 里的 vermagic 是 `6.1.25 SMP preempt mod_unload modversions aarch64`
+> （不带 localversion）。内核 `same_magic()` 在模块带 `__versions`（`CONFIG_MODVERSIONS=y`）时
+> 只比对第一个空格之后的部分，所以**版本串不参与模块校验，符号 CRC 才是真校验**；
+> 但 release 串决定了模块**查找路径**，所以仍必须与原厂完全一致。
+
+### 不刷机验证「模块能不能加载」
+
+`device/meizu21/module_kmi_manifest.txt` 是从设备真实 `.ko`（vendor_boot ramdisk 392 个模块）
+抽出的 KMI 依赖清单（3937 个符号，其中 2927 个必须由内核提供）。CI 编译后会用内核
+`Module.symvers` 校验这些符号**存在且 CRC 一致**，报告写入 `module_compat.txt`
+（随 release / dist 分支上传；`Module.symvers` 也一并上传便于离线核对）。
+`RESULT: FAIL` 就说明内核会拒载厂商模块，不必浪费一次刷机。
+
+---
+
 ## 更新内置源码
 
 ```powershell

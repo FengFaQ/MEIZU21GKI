@@ -206,5 +206,23 @@ check("build.yml: 版本串校验不匹配时硬失败(不产出坏包)",
       "内核版本串不匹配" in bblob and bblob.count("exit 1") >= 1)
 check("build.yml: 打印 vermagic 便于核对", "SMP preempt mod_unload modversions aarch64" in bblob)
 
+# ---------- 6d. 厂商模块 KMI(符号 CRC)兼容性自检 ----------
+man = os.path.join(R, "device", "meizu21", "module_kmi_manifest.txt")
+need = defs = 0
+if os.path.isfile(man):
+    with open(man, encoding="utf-8") as fh:
+        for line in fh:
+            need += line.startswith("NEED ")
+            defs += line.startswith("DEF ")
+check("device/meizu21/module_kmi_manifest.txt 存在且规模合理",
+      need >= 2800 and defs >= 800, f"NEED={need} DEF={defs}")
+check("tools/check_module_kmi.py 存在", os.path.isfile(os.path.join(R, "tools", "check_module_kmi.py")))
+check("build.yml: 编译后跑厂商模块 KMI 校验",
+      "tools/check_module_kmi.py" in bblob and "module_compat.txt" in bblob)
+check("build.yml: KMI 报告与 symvers 随产物上传",
+      "module_compat.txt" in bblob and "cp \"$SYMVERS\" \"$GITHUB_WORKSPACE/Module.symvers\"" in bblob)
+check("build.yml: KMI 校验失败时会告警",
+      "厂商模块可能加载失败" in bblob)
+
 print(f"\nRESULT: {'ALL CHECKS PASSED' if fail == 0 else f'{fail} CHECK(S) FAILED'}")
 sys.exit(1 if fail else 0)
