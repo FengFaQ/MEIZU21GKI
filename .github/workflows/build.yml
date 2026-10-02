@@ -1614,7 +1614,7 @@ jobs:
       #   mem_cgroup_id_put2 / wait_spam_info / 12 个 vendor hook(__tracepoint_android_vh_*)
       # 依据: 设备模块 __versions + 模块重定位类型(tools/symbol_ref_kind.py) + 原厂内核 BTF
       # ⚠ 必须独立成步: "编译内核"在容器里执行, 容器内看不到 $GITHUB_WORKSPACE/tools。
-      - name: KMI 兼容层 (A 方案, 补私有符号)
+      - name: 补原厂私有符号 (A 方案)
         if: hashFiles('device/meizu21/module_kmi_manifest.txt') != ''
         run: |
           set -e
@@ -1832,7 +1832,7 @@ jobs:
       # B 方案: 把设备厂商模块 __versions 里期望的符号 CRC 对齐进内核 Image(改 __kcrctab)。
       # 为什么安全: module_layout 本来就一致, 核心结构体布局经 BTF 逐成员对比也一致
       # (tools/btf_diff.py), 差异只是"版本戳"; 对齐后厂商模块可原样加载, 不必改 vendor 分区。
-      - name: KMI CRC 对齐 (B 方案)
+      - name: 符号 CRC 对齐 (B 方案)
         if: hashFiles('device/meizu21/module_kmi_manifest.txt') != ''
         run: |
           set -e
