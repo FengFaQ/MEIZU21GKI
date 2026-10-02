@@ -107,6 +107,12 @@ on:
         required: false
         type: string
         default: ""
+      # boot.img 是否加 AVB hash footer: 签名 = 旧行为(自带生成的密钥 + 补齐到 64MiB)
+      #   不签名 = 与"能启动的参考镜像"结构一致(os 版本照写, 不签名, 只零填充到分区大小)
+      boot_sign:
+        required: false
+        type: string
+        default: "签名"
 
 jobs:
   build-kernel:
@@ -1788,6 +1794,42 @@ jobs:
           mv ../Image ./Image
           zip -r "../$ZIP_NAME" ./*
 
+      # 厂商模块(vendor_boot / vendor_dlkm 里的 display/touch/storage 等)自带官方 vermagic 字符串,
+      # 内核加载模块时逐字符比对, 不一致就拒绝加载 → 现象: 卡第一屏 2~3 秒后被看门狗重启。
+      # 这里把版本串/vermagic 打进日志, 用来核对是否与官方一致。
+      - name: 校验内核版本串 / 模块 vermagic
+        if: always()
+        run: |
+          IMG=""
+          for c in "${{ env.KERNEL_ROOT }}/bazel-bin/common/kernel_aarch64/Image" \
+                   "${{ env.KERNEL_ROOT }}/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image"; do
+            if [ -f "$c" ]; then IMG="$c"; break; fi
+          done
+          if [ -z "$IMG" ]; then
+            IMG=$(find "${{ env.KERNEL_ROOT }}" -maxdepth 6 -name Image -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$IMG" ] || [ ! -f "$IMG" ]; then
+            echo "未找到 Image, 跳过版本串校验"
+            exit 0
+          fi
+          echo "Image: $IMG"
+          echo "== Linux version 串 =="
+          STR=$(strings -a "$IMG" | grep -m1 'Linux version' || true)
+          echo "$STR"
+          echo "== vermagic =="
+          VM=$(strings -a "$IMG" | grep -m1 'SMP preempt mod_unload modversions aarch64' || true)
+          echo "$VM"
+          WANT="$(echo '${{ inputs.version }}' | tr -d '[:space:]')"
+          if [ -n "$WANT" ]; then
+            # 注意末尾空格: 这样也能抓到 "重复拼接" 的坏版本串(6.1.25-X-X)
+            if printf '%s' "$STR" | grep -qF "$WANT "; then
+              echo "✅ 版本串与目标 '$WANT' 一致(厂商模块 vermagic 可匹配)"
+            else
+              echo "::error title=内核版本串不匹配::期望 '$WANT', 实际 '$STR'。厂商模块会拒绝加载 → 卡第一屏后重启, 这种产物不要刷。"
+              exit 1
+            fi
+          fi
+
       - name: 准备 AnyKernel3 目录
         if: inputs.artifact_upload_mode != '上传全部'
         run: |
@@ -1830,17 +1872,30 @@ jobs:
         run: |
           gzip -n -k -f -9 ./Image > ./Image.gz
 
-          $MKBOOTIMG --header_version 4 --kernel Image --output boot.img
-          $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-          cp ./boot.img ../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-boot.img
+          # os_version / os_patch_level 必须写!(Android 12 分支一直有, 13+ 分支以前漏了)
+          # 头部这两项为 0 时, 部分 ABL(含魅族 21)会判定镜像非法 → 直接进 fastboot
+          ANDROID_MAJOR=$(echo "${{ inputs.android_version }}" | tr -dc '0-9')
+          OS_VERSION="${ANDROID_MAJOR}.0.0"
+          OS_PATCH="${{ inputs.os_patch_level }}"
+          PART_SIZE=$((64 * 1024 * 1024))
+          echo "mkbootimg os_version=${OS_VERSION} os_patch_level=${OS_PATCH} boot_sign=${{ inputs.boot_sign }}"
 
-          $MKBOOTIMG --header_version 4 --kernel Image.gz --output boot-gz.img
-          $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-gz.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-          cp ./boot-gz.img ../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-boot-gz.img
-
-          $MKBOOTIMG --header_version 4 --kernel Image.lz4 --output boot-lz4.img
-          $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-lz4.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
-          cp ./boot-lz4.img ../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-boot-lz4.img
+          for pair in "boot.img:Image" "boot-gz.img:Image.gz" "boot-lz4.img:Image.lz4"; do
+            OUT="${pair%%:*}"; KERN="${pair##*:}"
+            $MKBOOTIMG --header_version 4 --kernel "$KERN" --output "$OUT" \
+              --os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"
+            if [ "${{ inputs.boot_sign }}" = "不签名" ]; then
+              # 与参考镜像同结构: 不加 AVB, 只把镜像零填充到分区大小
+              # (避免分区尾部残留上一次刷入的旧 AVB footer)
+              truncate -s "$PART_SIZE" "$OUT"
+              echo "$OUT: 未签名, 已零填充到 $((PART_SIZE / 1024 / 1024)) MiB"
+            else
+              $AVBTOOL add_hash_footer --partition_name boot --partition_size "$PART_SIZE" \
+                --image "$OUT" --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
+              echo "$OUT: 已加 AVB hash footer"
+            fi
+            cp "./$OUT" "../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-$OUT"
+          done
 
       - name: 收集补丁冲突文件
         if: always()

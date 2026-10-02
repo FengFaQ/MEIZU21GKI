@@ -86,11 +86,19 @@ jobs:
       use_zram: ${{ inputs.use_zram || false }}
       use_bbg: ${{ inputs.use_bbg || false }}
       use_kpm: ${{ inputs.use_kpm || 'disabled (关闭)' }}
-      version: ""
+      # ★ 必须与设备原厂内核的 LOCALVERSION 完全一致:
+      #   原厂 = 6.1.25-android14-11-maybe-dirty
+      #   vendor_boot/vendor_dlkm 里的厂商模块(display/touch/storage…)vermagic 就是这一串,
+      #   不一致 → 内核拒绝加载这些模块 → 卡第一屏 2~3 秒后被看门狗重启。
+      #   (留空会走 build.yml 的 "KMI 伪装" 分支, 生成 -android14-11-g<sha>-ab<随机>-4k,
+      #    与官方不同 → 必然起不来; 花花的参考镜像是 -Keirui-huahuahua, 所以它也重启)
+      version: "6.1.25-android14-11-maybe-dirty"
       build_time: ""
       supp_op: false
       droidspaces: "off"
       artifact_upload_mode: ${{ inputs.artifact_upload_mode || '上传全部' }}
+      # 不签名 = 与"能启动的参考镜像"同结构(不加 AVB footer, 只零填充到分区大小)
+      boot_sign: "不签名"
       # 对齐原厂 / 可启动参考的 .config(三方对比结论, 见 README)
       # 注意: 关闭型配置必须写成 "# CONFIG_X is not set" —— 写 "CONFIG_X=n" 会被 kleaf
       # 的 fragment 校验判为 actual '' != expected 'n' 而 fail(实测 run #1)

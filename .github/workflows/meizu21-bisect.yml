@@ -80,11 +80,13 @@ jobs:
       use_zram: ${{ inputs.use_zram }}
       use_bbg: ${{ inputs.use_bbg }}
       use_kpm: ${{ inputs.use_kpm }}
-      version: ""
+      # 与原厂 LOCALVERSION 完全一致(见 meizu21.yml 的说明), 否则厂商模块拒绝加载
+      version: "6.1.25-android14-11-maybe-dirty"
       build_time: ""
       supp_op: false
       droidspaces: "off"
       artifact_upload_mode: ${{ inputs.artifact_upload_mode }}
+      boot_sign: "不签名"
       extra_config: |
         # CONFIG_TRIM_UNUSED_KSYMS is not set
         # CONFIG_PANIC_ON_OOPS is not set

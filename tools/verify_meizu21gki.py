@@ -186,5 +186,25 @@ check("无 >100MB 单文件(GitHub 硬限制)", not big, str(big))
 print(f"     仓库工作树: {total/1048576:.1f} MB / {count} 文件")
 check("仓库体积 < 900MB(GitHub 建议上限)", total < 900 * 1048576)
 
+# ---------- 6c. vendor 模块 vermagic + boot 头部 os_version(两个"进 fastboot / 重启"根因) ----------
+STOCK_VERSION = "6.1.25-android14-11-maybe-dirty"
+check("build.yml: 声明 boot_sign 输入(默认签名, 保持其它机型旧行为)",
+      decl.get("boot_sign", {}).get("default") == "签名", str(decl.get("boot_sign")))
+check("meizu21.yml: version == 原厂 LOCALVERSION(否则厂商模块拒绝加载)",
+      mw.get("version") == STOCK_VERSION, str(mw.get("version")))
+check("bisect: version == 原厂 LOCALVERSION", bw.get("version") == STOCK_VERSION, str(bw.get("version")))
+check("meizu21.yml: boot_sign 不签名(对齐可启动参考镜像)",
+      mw.get("boot_sign") == "不签名", str(mw.get("boot_sign")))
+check("bisect: boot_sign 不签名", bw.get("boot_sign") == "不签名", str(bw.get("boot_sign")))
+check("build.yml: Android13+ 分支写 os_version/os_patch_level(缺失会被 ABL 判非法→fastboot)",
+      '--os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"' in bblob)
+check("build.yml: Android13+ 分支 os_version 由 android_version 推导",
+      'ANDROID_MAJOR=$(echo "${{ inputs.android_version }}" | tr -dc \'0-9\')' in bblob)
+check("build.yml: 不签名时零填充到分区大小(清掉分区尾部旧 AVB footer)",
+      'truncate -s "$PART_SIZE" "$OUT"' in bblob)
+check("build.yml: 版本串校验不匹配时硬失败(不产出坏包)",
+      "内核版本串不匹配" in bblob and bblob.count("exit 1") >= 1)
+check("build.yml: 打印 vermagic 便于核对", "SMP preempt mod_unload modversions aarch64" in bblob)
+
 print(f"\nRESULT: {'ALL CHECKS PASSED' if fail == 0 else f'{fail} CHECK(S) FAILED'}")
 sys.exit(1 if fail else 0)
