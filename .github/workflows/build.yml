@@ -1801,15 +1801,21 @@ jobs:
         if: always()
         run: |
           IMG=""
-          for c in "${{ env.KERNEL_ROOT }}/bazel-bin/common/kernel_aarch64/Image" \
-                   "${{ env.KERNEL_ROOT }}/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image"; do
+          # 注意: KERNEL_ROOT 是 $GITHUB_ENV 写出来的 → 只有 shell 变量 $KERNEL_ROOT 一定可用,
+          # 不要用 ${{ env.KERNEL_ROOT }}(env 上下文未必包含 GITHUB_ENV 的值)
+          : "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"
+          for c in "$KERNEL_ROOT/bazel-bin/common/kernel_aarch64/Image" \
+                   "$KERNEL_ROOT/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image"; do
             if [ -f "$c" ]; then IMG="$c"; break; fi
           done
           if [ -z "$IMG" ]; then
-            IMG=$(find "${{ env.KERNEL_ROOT }}" -maxdepth 6 -name Image -type f 2>/dev/null | head -1)
+            IMG=$(find "$KERNEL_ROOT" -maxdepth 6 -name Image -type f 2>/dev/null | head -1)
           fi
           if [ -z "$IMG" ] || [ ! -f "$IMG" ]; then
-            echo "未找到 Image, 跳过版本串校验"
+            echo "未找到 Image, 跳过版本串校验(若是编译失败属正常)"
+            if [ -n "${{ inputs.version }}" ]; then
+              echo "::warning title=没找到 Image::无法校验版本串是否为 '${{ inputs.version }}'"
+            fi
             exit 0
           fi
           echo "Image: $IMG"
@@ -1839,12 +1845,13 @@ jobs:
         run: |
           MANIFEST="$GITHUB_WORKSPACE/device/meizu21/module_kmi_manifest.txt"
           SYMVERS=""
-          for c in "${{ env.KERNEL_ROOT }}/bazel-bin/common/kernel_aarch64/Module.symvers" \
-                   "${{ env.KERNEL_ROOT }}/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Module.symvers"; do
+          : "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"      # 见上: 只用 shell 变量
+          for c in "$KERNEL_ROOT/bazel-bin/common/kernel_aarch64/Module.symvers" \
+                   "$KERNEL_ROOT/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Module.symvers"; do
             if [ -f "$c" ]; then SYMVERS="$c"; break; fi
           done
           if [ -z "$SYMVERS" ]; then
-            SYMVERS=$(find "${{ env.KERNEL_ROOT }}" -maxdepth 8 -name 'Module.symvers' -type f 2>/dev/null | head -1)
+            SYMVERS=$(find "$KERNEL_ROOT" -maxdepth 8 -name 'Module.symvers' -type f 2>/dev/null | head -1)
           fi
           if [ ! -f "$MANIFEST" ] || [ -z "$SYMVERS" ] || [ ! -f "$SYMVERS" ]; then
             echo "清单(${MANIFEST:-无})或 Module.symvers(${SYMVERS:-无})缺失, 跳过 KMI 校验"

@@ -223,6 +223,9 @@ check("build.yml: KMI 报告与 symvers 随产物上传",
       "module_compat.txt" in bblob and "cp \"$SYMVERS\" \"$GITHUB_WORKSPACE/Module.symvers\"" in bblob)
 check("build.yml: KMI 校验失败时会告警",
       "厂商模块可能加载失败" in bblob)
+# KERNEL_ROOT 来自 $GITHUB_ENV → 只能用 shell 变量; 写成 ${{ env.KERNEL_ROOT }} 会静默取到空串
+check("build.yml: 新步骤用 shell 变量 $KERNEL_ROOT(不是 ${{ env.KERNEL_ROOT }})",
+      "${{ env.KERNEL_ROOT }}" not in bblob and ': "${KERNEL_ROOT:=$GITHUB_WORKSPACE/$CONFIG}"' in bblob)
 
 print(f"\nRESULT: {'ALL CHECKS PASSED' if fail == 0 else f'{fail} CHECK(S) FAILED'}")
 sys.exit(1 if fail else 0)
