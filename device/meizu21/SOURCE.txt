@@ -1,0 +1,9 @@
+# 魅族21 设备树快照 (从本机 9008 全分区备份提取)
+origin_repo=meizu21-kernel (本地构建, 未推送; 归档进本仓库)
+commit=a65878179fd69c8c5b7bddd5bc82d6ec5a86ea0b
+date=2026-10-02 11:45:14 +0800
+source=E:\shuji\MEI\ToolsBox\9008\meizu21_MEIZUBOX_ParBak_2026.05.04_21.49.30.314\images
+device=魅族21 (SM8650 / Qualcomm Pineapple)
+gki=android14-6.1 / kernel 6.1.25-android14-11 / os_patch 2023-10 / boot header v4
+note=GKI 内核构建本身不需要设备树(dtb 在 dtbo/vendor_boot 分区, AK3 不附 dtb);
+     此目录为项目资产归档与后续非 GKI/DT 工作的参考

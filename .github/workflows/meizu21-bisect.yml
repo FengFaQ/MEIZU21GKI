@@ -1,0 +1,146 @@
+name: MEIZU21GKI 二分定位 (开机循环排查)
+
+# 用途: 刷入新内核仍开机循环时, 逐层排除变量
+#   L0 = 禁用KSU           → 纯 GKI 基础包(无 KSU/SUSFS)
+#   L1 = 禁用SUSFS         → 有 KSU, 无 SUSFS 补丁
+#   L2 = 关闭(全开)         → 完整包
+# LTO 默认 none(与原厂一致); 想对照可切 thin。extra_config 固定三行, 保证变量唯一。
+# 失败 → 日志进仓库 log/ 目录; 成功 → 预览版 release + dist 分支
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      label:
+        description: '本次测试标签(如 L0-no-ksu)'
+        required: true
+        type: string
+        default: 'L0-no-ksu'
+      ksu_variant:
+        description: 'KernelSU 变体'
+        required: true
+        type: choice
+        options: [ ReSukiSU, SukiSU, Official ]
+        default: ReSukiSU
+      ksu_mode:
+        description: 'L0=禁用KSU / L1=禁用SUSFS / L2=关闭(全开)'
+        required: true
+        type: choice
+        options: [ 禁用KSU, 禁用SUSFS, 关闭 ]
+        default: 禁用KSU
+      lto_mode:
+        description: 'LTO 模式 (none = 与原厂一致; 仅 A/B 对照时改)'
+        required: true
+        type: choice
+        options: [ none, thin, auto ]
+        default: none
+      use_zram:
+        description: 'ZRAM 增强'
+        required: true
+        type: boolean
+        default: false
+      use_bbg:
+        description: 'BBG 防格机'
+        required: true
+        type: boolean
+        default: false
+      use_kpm:
+        description: 'KPM 功能'
+        required: true
+        type: choice
+        default: "disabled (关闭)"
+        options:
+          - "disabled (关闭)"
+          - "enabled (开启)"
+      artifact_upload_mode:
+        description: '产物上传模式'
+        required: true
+        type: choice
+        options:
+          - "上传全部"
+          - "仅上传 AnyKernel3.zip"
+        default: "上传全部"
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+    with:
+      android_version: "android14"
+      kernel_version: "6.1"
+      sub_level: "25"
+      os_patch_level: "2023-10"
+      ksu_variant: ${{ inputs.ksu_variant }}
+      ksu_mode: ${{ inputs.ksu_mode }}
+      lto_mode: ${{ inputs.lto_mode }}
+      enable_susfs: ${{ inputs.ksu_mode != '禁用SUSFS' && inputs.ksu_mode != '禁用KSU' }}
+      use_zram: ${{ inputs.use_zram }}
+      use_bbg: ${{ inputs.use_bbg }}
+      use_kpm: ${{ inputs.use_kpm }}
+      version: ""
+      build_time: ""
+      supp_op: false
+      droidspaces: "off"
+      artifact_upload_mode: ${{ inputs.artifact_upload_mode }}
+      extra_config: |
+        CONFIG_TRIM_UNUSED_KSYMS=n
+        CONFIG_PANIC_ON_OOPS=n
+        CONFIG_PANIC_TIMEOUT=30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create bisect prerelease and upload
+        run: |
+          set -e
+          TAG="meizu21-bisect-${{ github.run_number }}"
+          gh release create "$TAG" --prerelease \
+            --title "MEIZU21GKI bisect: ${{ inputs.label }} (${{ inputs.ksu_variant }} / ${{ inputs.ksu_mode }} / lto=${{ inputs.lto_mode }})" \
+            --notes "二分定位预览版。ksu_variant=${{ inputs.ksu_variant }} ksu_mode=${{ inputs.ksu_mode }} susfs=${{ inputs.ksu_mode != '禁用SUSFS' && inputs.ksu_mode != '禁用KSU' }} lto=${{ inputs.lto_mode }} | run ${{ github.run_number }} @ ${{ github.sha }}"
+          shopt -s nullglob
+          for f in ./artifacts/*/*; do
+            [ -f "$f" ] || continue
+            echo "uploading $f"
+            gh release upload "$TAG" "$f" --clobber
+          done
+
+      - name: Push assets + config marker to dist branch
+        run: |
+          set -e
+          mkdir -p /tmp/distpush
+          cd /tmp/distpush
+          git init -q -b dist
+          git config user.email "action@github.com"
+          git config user.name "github-actions[bot]"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          shopt -s nullglob
+          for f in "$GITHUB_WORKSPACE"/artifacts/*/*; do
+            [ -f "$f" ] || continue
+            cp "$f" .
+          done
+          {
+            echo "label=${{ inputs.label }}"
+            echo "ksu_variant=${{ inputs.ksu_variant }}"
+            echo "ksu_mode=${{ inputs.ksu_mode }}"
+            echo "lto_mode=${{ inputs.lto_mode }}"
+            echo "run=${{ github.run_number }}"
+            echo "sha=${{ github.sha }}"
+          } > config.txt
+          git add -A
+          git commit -q -m "bisect dist: meizu21-bisect-${{ github.run_number }}"
+          git push -f origin dist:dist
+          echo "bisect assets pushed to dist branch"

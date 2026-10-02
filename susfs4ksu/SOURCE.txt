@@ -1,0 +1,8 @@
+# 内置 SUSFS 补丁来源 (vendored, 无 .git)
+# 更新方式: git clone -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git 后覆盖本目录
+repo=https://gitlab.com/simonpunk/susfs4ksu
+branch=gki-android14-6.1
+commit=24743360ea08d98f6ad72b856851abed8de5854f
+date=2026-09-26 01:48:27 +0800
+license=GPL-2.0 (见本目录 LICENSE)
+note=只用到 kernel_patches/ (fs/ include/ KernelSU/ 50_add_susfs_in_gki-android14-6.1.patch) 与 ksu_susfs 工具

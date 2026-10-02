@@ -1,0 +1,193 @@
+name: MEIZU21GKI 构建 (ReSukiSU + SUSFS, android14-6.1.25)
+
+# 目标机型: 魅族21 (SM8650 / Pineapple), GKI android14-6.1, sub_level 25, os_patch 2023-10
+# 默认: ReSukiSU(对齐可启动参考 huahuahua 血统) + SUSFS + LTO=none
+# 失败 → 日志自动提交到仓库 log/ 目录(见 build.yml)
+# 成功 → 自动创建 release(预览版 prerelease) + 同时把产物推到 dist 分支(本机 CDN 被墙时的取回通道)
+
+permissions:
+  contents: write   # 创建 release / 提交 log / 推 dist 分支
+  actions: write
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - '.github/workflows/build.yml'
+      - '.github/workflows/meizu21.yml'
+      - 'config/**'
+      - 'scripts/**'
+      - 'security_patch/**'
+      - 'zram/**'
+      - 'kernelsu/**'      # 内置 ReSukiSU 源码
+      - 'susfs4ksu/**'     # 内置 SUSFS 补丁快照
+      # 注意: 不含 'log/**' —— 失败日志提交不会再次触发构建
+  workflow_dispatch:
+    inputs:
+      ksu_variant:
+        description: 'KernelSU 变体 (ReSukiSU = 参考镜像血统, 内置源码)'
+        required: true
+        type: choice
+        options: [ ReSukiSU, SukiSU, Official ]
+        default: ReSukiSU
+      ksu_mode:
+        description: 'KSU/SUSFS 模式'
+        required: true
+        type: choice
+        options: [ 关闭, 禁用SUSFS, 禁用KSU ]
+        default: 关闭
+      lto_mode:
+        description: 'LTO 模式 (none = 与原厂一致; 仅 A/B 对照时改)'
+        required: true
+        type: choice
+        options: [ none, thin, auto ]
+        default: none
+      use_zram:
+        description: 'ZRAM 增强算法'
+        required: true
+        type: boolean
+        default: false
+      use_bbg:
+        description: 'BBG 防格机'
+        required: true
+        type: boolean
+        default: false
+      use_kpm:
+        description: 'KPM 功能'
+        required: true
+        type: choice
+        default: "disabled (关闭)"
+        options:
+          - "disabled (关闭)"
+          - "enabled (开启)"
+      artifact_upload_mode:
+        description: '产物上传模式'
+        required: true
+        type: choice
+        options:
+          - "上传全部"
+          - "仅上传 AnyKernel3.zip"
+        default: "上传全部"
+
+jobs:
+  build-kernel:
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+    with:
+      android_version: "android14"
+      kernel_version: "6.1"
+      sub_level: "25"
+      os_patch_level: "2023-10"
+      # push 事件没有 inputs → 用 || 落到默认值(ReSukiSU / 关闭 / none)
+      ksu_variant: ${{ inputs.ksu_variant || 'ReSukiSU' }}
+      ksu_mode: ${{ inputs.ksu_mode || '关闭' }}
+      lto_mode: ${{ inputs.lto_mode || 'none' }}
+      enable_susfs: ${{ (inputs.ksu_mode || '关闭') != '禁用SUSFS' && (inputs.ksu_mode || '关闭') != '禁用KSU' }}
+      use_zram: ${{ inputs.use_zram || false }}
+      use_bbg: ${{ inputs.use_bbg || false }}
+      use_kpm: ${{ inputs.use_kpm || 'disabled (关闭)' }}
+      version: ""
+      build_time: ""
+      supp_op: false
+      droidspaces: "off"
+      artifact_upload_mode: ${{ inputs.artifact_upload_mode || '上传全部' }}
+      # 对齐原厂 / 可启动参考的 .config(三方对比结论, 见 README)
+      extra_config: |
+        CONFIG_TRIM_UNUSED_KSYMS=n
+        CONFIG_PANIC_ON_OOPS=n
+        CONFIG_PANIC_TIMEOUT=30
+
+  release:
+    needs: build-kernel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create prerelease and upload
+        run: |
+          set -e
+          VARIANT="${{ inputs.ksu_variant || 'ReSukiSU' }}"
+          TAG="meizu21-sukisu-${{ github.run_number }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG exists, deleting"
+            gh release delete "$TAG" --yes --cleanup-tag || true
+          fi
+          gh release create "$TAG" --prerelease \
+            --title "MEIZU21GKI $VARIANT+SUSFS android14-6.1.25-2023-10 (run ${{ github.run_number }})" \
+            --notes "预览版本(preview)。GKI android14-6.1.25 / os_patch 2023-10 / LTO=none / KernelSU=$VARIANT + SUSFS。
+          extra_config: CONFIG_TRIM_UNUSED_KSYMS=n, CONFIG_PANIC_ON_OOPS=n, CONFIG_PANIC_TIMEOUT=30 (对齐原厂与可启动参考)。
+          配套管理器: 与 $VARIANT 对应的管理器 APK。run ${{ github.run_number }} @ ${{ github.sha }}"
+          shopt -s nullglob
+          FILES=()
+          for f in ./artifacts/*/*; do
+            [ -f "$f" ] || continue
+            echo "uploading $f"
+            gh release upload "$TAG" "$f" --clobber
+            FILES+=("$f")
+          done
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "::error::no artifacts found"
+            exit 1
+          fi
+
+          # 稳定入口: meizu21-latest 恒指向最新一次成功构建(同样标为预览版)
+          LATEST="meizu21-latest"
+          if gh release view "$LATEST" >/dev/null 2>&1; then
+            gh release delete "$LATEST" --yes --cleanup-tag || true
+          fi
+          gh release create "$LATEST" --prerelease \
+            --title "MEIZU21GKI latest preview (run ${{ github.run_number }})" \
+            --notes "始终指向最新成功构建(预览版)。本资产属于 run ${{ github.run_number }} @ ${{ github.sha }}。历史版本见 meizu21-sukisu-N。"
+          for f in "${FILES[@]}"; do
+            gh release upload "$LATEST" "$f" --clobber
+          done
+
+          # 只保留最近 3 个历史版本
+          mapfile -t OLD < <(gh release list --limit 50 \
+            --json tagName,isPrerelease \
+            -q '.[] | select(.isPrerelease and (.tagName | startswith("meizu21-sukisu-"))) | .tagName' \
+            | tail -n +4)
+          for t in "${OLD[@]}"; do
+            echo "deleting old release $t"
+            gh release delete "$t" --yes --cleanup-tag || true
+          done
+
+      # 本机直连 objects.githubusercontent.com 被墙(release 资产下载不了) →
+      # 把产物再推到 dist 分支, 本地用 SSH git fetch 取回
+      - name: Push assets to dist branch
+        run: |
+          set -e
+          mkdir -p /tmp/distpush
+          cd /tmp/distpush
+          git init -q -b dist
+          git config user.email "action@github.com"
+          git config user.name "github-actions[bot]"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          shopt -s nullglob
+          for f in "$GITHUB_WORKSPACE"/artifacts/*/*; do
+            [ -f "$f" ] || continue
+            cp "$f" .
+          done
+          if ! ls *.zip *.img >/dev/null 2>&1; then
+            echo "::error::no artifacts found to push"
+            exit 1
+          fi
+          {
+            echo "tag=meizu21-sukisu-${{ github.run_number }}"
+            echo "variant=${{ inputs.ksu_variant || 'ReSukiSU' }}"
+            echo "lto=none"
+            echo "run=${{ github.run_number }}"
+            echo "sha=${{ github.sha }}"
+          } > config.txt
+          git add -A
+          git commit -q -m "dist: meizu21-sukisu-${{ github.run_number }} assets (run ${GITHUB_RUN_ID}, sha ${GITHUB_SHA})"
+          git push -f origin dist:dist
+          echo "assets pushed to dist branch"

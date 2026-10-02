@@ -1,0 +1,16 @@
+# 构建产物/临时文件(仅忽略真正的一次性产物, 不影响仓库内 vendored 源码与设备树)
+# 注意: 不要加 *.img / *.ko / *.zip / Image / *.symvers —— 设备树与产物目录里确有这些文件
+/out/
+/build-logs/
+/susfs-patch/
+/patch-rejects/
+kernel_workspace/
+*.rej
+*.tmp
+__pycache__/
+*.py[cod]
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

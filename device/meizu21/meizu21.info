@@ -1,0 +1,35 @@
+# meizu21-kernel 设备树信息
+# 从本地 9008 全分区备份提取(MEIZUBOX ParBak 2026.05.04)
+# 结构参照 android_device_meizu_meizu21Pro-kernel(Paranoid Android 风格预编译内核 drop)
+
+[device]
+brand          = meizu
+device         = meizu21
+model          = MEIZU 21
+name           = meizu_21_CN
+soc            = qcom/sm8650 (Pineapple)
+build_fingerprint = meizu/meizu_21_CN/meizu21:16/BQ2A.251016.001-BP2A.250605.031.A3/1763702019:user/release-keys
+
+[kernel]
+gki            = android14-6.1
+release        = 6.1.25-android14-11-maybe-dirty
+kmi            = 6.1.25-android14-11
+kernel_md5     = 0BC617CA397357BF0A14107AB2FC7F2A
+kernel_size    = 33892864
+boot_header    = v4
+boot_os_version     = 14.0.0
+boot_os_patch_level = 2023-10
+dtbo_md5       = 5AB8F926E67330DB7B796F5E46C9E09F
+
+[modules]
+vendor_ramdisk_ko = 335
+vendor_dlkm_ko    = 304
+system_dlkm_ko    = 57
+module_fs    = EROFS (vendor_dlkm / system_dlkm 原分区)
+ramdisk_comp = LZ4 legacy (magic 02 21 4C 18)
+
+[parts]
+boot          = boot_a.img    (96MB, ANDROID! v4, kernel only)
+vendor_boot   = vendor_boot_a.img (96MB, dtb 1171449B + vendor_ramdisk00 9660812B + bootconfig)
+dtbo          = dtbo_a.img    (24MB, Android DTBO)
+system_dlkm_ver = 6.1.25-android14-11-maybe-dirty

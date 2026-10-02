@@ -1,0 +1,8 @@
+﻿boot magic: ANDROID!
+kernel_size: 33892864
+ramdisk size: 0
+os version: 14.0.0
+os patch level: 2023-10
+boot image header version: 4
+command line args: 
+boot.img signature size: 0
