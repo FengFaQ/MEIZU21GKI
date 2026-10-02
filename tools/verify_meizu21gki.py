@@ -20,7 +20,11 @@ import yaml
 
 R = r"C:\work\pt\meizu21-gki\MEIZU21GKI"
 W = os.path.join(R, ".github", "workflows")
-EXPECT_EXTRA = ["CONFIG_TRIM_UNUSED_KSYMS=n", "CONFIG_PANIC_ON_OOPS=n", "CONFIG_PANIC_TIMEOUT=30"]
+EXPECT_EXTRA = [
+    "# CONFIG_TRIM_UNUSED_KSYMS is not set",
+    "# CONFIG_PANIC_ON_OOPS is not set",
+    "CONFIG_PANIC_TIMEOUT=30",
+]
 fail = 0
 
 

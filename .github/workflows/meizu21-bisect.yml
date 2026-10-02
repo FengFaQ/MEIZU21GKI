@@ -86,8 +86,8 @@ jobs:
       droidspaces: "off"
       artifact_upload_mode: ${{ inputs.artifact_upload_mode }}
       extra_config: |
-        CONFIG_TRIM_UNUSED_KSYMS=n
-        CONFIG_PANIC_ON_OOPS=n
+        # CONFIG_TRIM_UNUSED_KSYMS is not set
+        # CONFIG_PANIC_ON_OOPS is not set
         CONFIG_PANIC_TIMEOUT=30
 
   release:

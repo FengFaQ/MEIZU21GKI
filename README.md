@@ -63,13 +63,16 @@ git -C $f worktree remove $tmp --force         # 再 remove
 | 配置 | 原厂 | 早期构建(开机循环) | 参考(可启动) | 本仓库 |
 | --- | --- | --- | --- | --- |
 | `CONFIG_LTO_CLANG_THIN` / `LTO_NONE` | n / y | y / n | n / y | **`lto_mode: none`** |
-| `CONFIG_TRIM_UNUSED_KSYMS` | y | y | n | **`extra_config` → n** |
-| `CONFIG_PANIC_ON_OOPS` / `PANIC_TIMEOUT` | y / -1 | y / -1 | n / 30 | **→ n / 30** |
+| `CONFIG_TRIM_UNUSED_KSYMS` | y | y | n | **`extra_config` → 关闭** |
+| `CONFIG_PANIC_ON_OOPS` / `PANIC_TIMEOUT` | y / -1 | y / -1 | n / 30 | **→ 关闭 / 30** |
 | `KSU_MULTI_MANAGER_SUPPORT` | — | 缺失 | y | ReSukiSU 默认 `y` |
 
 `meizu21.yml` 固定传 `lto_mode: "none"` 与上面三行 `extra_config`；
 `build.yml` 的 `lto_mode` 默认值是 `auto`（= 历史行为：6.12→none、其余 thin），
 以免影响其它机型的复用。
+
+> ⚠️ `extra_config` 里**关闭**某个配置必须写 `# CONFIG_X is not set`，
+> 写 `CONFIG_X=n` 会被 kleaf 的 fragment 校验拒绝（`actual '' != expected 'n'`）。
 
 > 参考镜像带 `CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y`，而当前 ReSukiSU `main` 的 Kconfig
 > 未声明该符号（其 magic 指 LSM hook magic），故本仓库暂无法开启 susfs magic mount。
