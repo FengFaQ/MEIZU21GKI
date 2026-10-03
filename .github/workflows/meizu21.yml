@@ -88,7 +88,15 @@ jobs:
       # push 事件没有 inputs → 用 || 落到默认值(ReSukiSU / 关闭 / none)
       ksu_variant: ${{ inputs.ksu_variant || 'ReSukiSU' }}
       ksu_mode: ${{ inputs.ksu_mode || '关闭' }}
-      lto_mode: ${{ inputs.lto_mode || 'none' }}
+      # ★ 2026-10-03: 改为 thin。
+      #   实测证据: 我们的 Image 里 __kcfi_typeid_* 符号数为 0, 而原厂 12.6 第一/第二版都
+      #   有(如 shrink_slab 的类型哈希 0xc3b4beac 就存在函数入口前 4 字节)。
+      #   双方 config 完全一致(LTO_NONE=y + CFI_CLANG=y), 说明差异出在构建方式:
+      #   本仓库走 kleaf/bazel 路径(--lto=none), 原厂是完整 kernel_platform 的 legacy
+      #   build/build.sh。kleaf 的 --lto=none 很可能连带丢掉了 -fsanitize=kcfi 标志。
+      #   后果: 厂商模块内联的 kcfi 校验对内核函数必然失败 →
+      #   "CFI failure at kshrink_slabd_func ... (target: shrink_slab)" → panic → 看门狗重启。
+      lto_mode: ${{ inputs.lto_mode || 'thin' }}
       enable_susfs: ${{ (inputs.ksu_mode || '关闭') != '禁用SUSFS' && (inputs.ksu_mode || '关闭') != '禁用KSU' }}
       use_zram: ${{ inputs.use_zram || false }}
       use_bbg: ${{ inputs.use_bbg || false }}

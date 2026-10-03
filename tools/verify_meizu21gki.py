@@ -117,7 +117,8 @@ mw = m["jobs"]["build-kernel"]["with"]
 check("meizu21.yml: 调用 build.yml", m["jobs"]["build-kernel"]["uses"].endswith("build.yml"))
 check("meizu21.yml: 默认 ReSukiSU",
       "ReSukiSU" in str(mw["ksu_variant"]), str(mw["ksu_variant"]))
-check("meizu21.yml: lto 默认 none", "none" in str(mw["lto_mode"]), str(mw["lto_mode"]))
+check("meizu21.yml: lto 默认 thin (必须生成 CFI 类型哈希, 见 commit 说明)",
+      "'thin'" in str(mw["lto_mode"]), str(mw["lto_mode"]))
 extra = [ln.strip() for ln in (mw.get("extra_config") or "").strip().splitlines()]
 check("meizu21.yml: extra_config == 期望三行", extra == EXPECT_EXTRA, str(extra))
 push = m[True]["push"]
