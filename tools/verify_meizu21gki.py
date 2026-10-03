@@ -28,6 +28,14 @@ EXPECT_EXTRA = [
     "# 只影响权限位, 不涉及任何导出符号/KMI。",
     "# CONFIG_SECURITY_DMESG_RESTRICT is not set",
     "CONFIG_PANIC_TIMEOUT=30",
+    # ★ 2026-10-03: 恢复原厂取值 / 去掉空转的 zram 模块
+    # (只列 CONFIG_ 行做子集比对, 注释行不逐一比对, 避免文案微调就报错)
+    "# CONFIG_DAMON is not set",
+    "# CONFIG_BLK_CGROUP_IOPRIO is not set",
+    "# CONFIG_TMPFS_XATTR is not set",
+    "# CONFIG_TMPFS_POSIX_ACL is not set",
+    "# CONFIG_ZRAM is not set",
+    "# CONFIG_ZSMALLOC is not set",
 ]
 fail = 0
 
@@ -117,10 +125,11 @@ mw = m["jobs"]["build-kernel"]["with"]
 check("meizu21.yml: 调用 build.yml", m["jobs"]["build-kernel"]["uses"].endswith("build.yml"))
 check("meizu21.yml: 默认 ReSukiSU",
       "ReSukiSU" in str(mw["ksu_variant"]), str(mw["ksu_variant"]))
-check("meizu21.yml: lto 默认 thin (必须生成 CFI 类型哈希, 见 commit 说明)",
-      "'thin'" in str(mw["lto_mode"]), str(mw["lto_mode"]))
+check("meizu21.yml: lto 默认 none (与原厂一致; CFI 不依赖 LTO, 见 build.yml 的 shrink_slab 修复)",
+      "none" in str(mw["lto_mode"]), str(mw["lto_mode"]))
 extra = [ln.strip() for ln in (mw.get("extra_config") or "").strip().splitlines()]
-check("meizu21.yml: extra_config == 期望三行", extra == EXPECT_EXTRA, str(extra))
+_missing = [e for e in EXPECT_EXTRA if e not in extra]
+check("meizu21.yml: extra_config 覆盖全部期望配置项", not _missing, "missing=%s" % _missing)
 push = m[True]["push"]
 check("meizu21.yml: 触发路径不含 log/**",
       not any(str(p).startswith("log") for p in push["paths"]), str(push["paths"]))

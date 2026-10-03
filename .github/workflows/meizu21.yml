@@ -88,15 +88,14 @@ jobs:
       # push 事件没有 inputs → 用 || 落到默认值(ReSukiSU / 关闭 / none)
       ksu_variant: ${{ inputs.ksu_variant || 'ReSukiSU' }}
       ksu_mode: ${{ inputs.ksu_mode || '关闭' }}
-      # ★ 2026-10-03: 改为 thin。
-      #   实测证据: 我们的 Image 里 __kcfi_typeid_* 符号数为 0, 而原厂 12.6 第一/第二版都
-      #   有(如 shrink_slab 的类型哈希 0xc3b4beac 就存在函数入口前 4 字节)。
-      #   双方 config 完全一致(LTO_NONE=y + CFI_CLANG=y), 说明差异出在构建方式:
-      #   本仓库走 kleaf/bazel 路径(--lto=none), 原厂是完整 kernel_platform 的 legacy
-      #   build/build.sh。kleaf 的 --lto=none 很可能连带丢掉了 -fsanitize=kcfi 标志。
-      #   后果: 厂商模块内联的 kcfi 校验对内核函数必然失败 →
-      #   "CFI failure at kshrink_slabd_func ... (target: shrink_slab)" → panic → 看门狗重启。
-      lto_mode: ${{ inputs.lto_mode || 'thin' }}
+      # ★ 2026-10-03: 保持 none(与原厂 config 一致)。
+      #   一度改成 thin, 因为当时误判"我们内核里一个 CFI 类型哈希都没有"; 那个判断是错的 ——
+      #   当时只查了 shrink_slab 一个哈希(0xc3b4beac)就下了结论, 而实际上 run 8(LTO none)
+      #   与 run 14(LTO thin)镜像里 kfree/zstd 的哈希分布【逐字节相同】, 说明 CFI 一直都生效。
+      #   我们与原厂真正的、唯一的差别是 shrink_slab 这一个函数没有类型哈希, 根因是上游 6.1
+      #   把它写成了 static(见 build.yml 的「修复 shrink_slab 缺失 KCFI 类型哈希」步骤),
+      #   与 LTO 无关。既然 thin 没有带来任何收益, 就回到与原厂一致的 none, 少一份 KMI 风险。
+      lto_mode: ${{ inputs.lto_mode || 'none' }}
       enable_susfs: ${{ (inputs.ksu_mode || '关闭') != '禁用SUSFS' && (inputs.ksu_mode || '关闭') != '禁用KSU' }}
       use_zram: ${{ inputs.use_zram || false }}
       use_bbg: ${{ inputs.use_bbg || false }}
@@ -125,6 +124,24 @@ jobs:
         # 只影响权限位, 不涉及任何导出符号/KMI。
         # CONFIG_SECURITY_DMESG_RESTRICT is not set
         CONFIG_PANIC_TIMEOUT=30
+        # ★ 2026-10-03: 以下 6 项恢复成原厂 12.6 第二版的取值。
+        #   依据: 三个 config 全部从镜像内嵌 IKCONFIG 提取后逐行核对(不是猜的) ——
+        #   device/meizu21/ref_stock.config 与 work/cfg_v2.config 只差 2 行(Jenkins 路径字符串)。
+        #   · DAMON / BLK_CGROUP_IOPRIO / TMPFS_XATTR / TMPFS_POSIX_ACL: 原厂关闭, 我们之前开着。
+        #     DAMON 与 PAGE_IDLE_FLAG 不只是速度问题 —— 它们会改动 struct mm_struct 字段与
+        #     PG_* 页标志位编号, 而厂商模块用的是 Meizu 头文件里的偏移与常量, 存在 KMI 错位风险。
+        #     PAGE_IDLE_FLAG / DAMON_VADDR / DAMON_SYSFS 无需单列: 它们由 CONFIG_DAMON select,
+        #     关掉 DAMON 会一并回到原厂取值(隐藏符号直接写进 fragment 会校验失败)。
+        #   · ZRAM / ZSMALLOC: 原厂内核根本没有这两项。魅族的 swap 由厂商模块提供
+        #     (lsmod: smartswap_zram + smart_zsmalloc), 而 smart_zsmalloc 自己就 DEF 了全部
+        #     10 个 zs_* 符号(module_kmi_manifest.txt L36876-36885), 所以内核不需要 ZSMALLOC;
+        #     实测设备上 lsmod 里从没加载过 zram/zsmalloc, 我们这两项配置纯属空转差异。
+        # CONFIG_DAMON is not set
+        # CONFIG_BLK_CGROUP_IOPRIO is not set
+        # CONFIG_TMPFS_XATTR is not set
+        # CONFIG_TMPFS_POSIX_ACL is not set
+        # CONFIG_ZRAM is not set
+        # CONFIG_ZSMALLOC is not set
 
   release:
     needs: build-kernel

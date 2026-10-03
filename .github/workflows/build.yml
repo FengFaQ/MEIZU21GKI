@@ -1512,7 +1512,10 @@ jobs:
           CONFIG_KSU_SUSFS_SUS_MOUNT=y
           CONFIG_KSU_SUSFS_SUS_KSTAT=y
           CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          # ★ 2026-10-03: 关闭 SUSFS 调试日志。ENABLE_LOG 会为每次钩子调用做日志输出,
+          #   开机期要读几万个文件, 这些逐次调用累积起来是实打实的启动开销。
+          #   功能不受影响 —— 它只是日志开关。
+          # CONFIG_KSU_SUSFS_ENABLE_LOG is not set
           CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
           CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
           CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
@@ -1524,6 +1527,58 @@ jobs:
             tail -n +$((LINES_BEFORE + 1)) "$DEFCONFIG" > "$GITHUB_WORKSPACE/susfs-patch/susfs.config"
             echo "已导出 SUSFS 配置片段: $(wc -l < "$GITHUB_WORKSPACE/susfs-patch/susfs.config") 行"
           fi
+
+      # ★★ 核心修复(2026-10-03): 让内核为 shrink_slab 生成 KCFI 类型哈希 ★★
+      #
+      # 现象: 开机约 90 秒后画面卡死, 2~3 秒后被看门狗复位重启, 内核日志:
+      #   CFI failure at kshrink_slabd_func+0x104/0x16c [mz_kshrink_slabd]
+      #     (target: shrink_slab+0x0/0x3a4; expected type: 0xc3b4beac)
+      #   Kernel panic - not syncing: Oops - CFI: Fatal exception
+      #
+      # 根因(已用镜像二进制逐字节验证):
+      #   1. /proc/kallsyms 里 shrink_slab 与 shrink_slab [mz_kshrink_slabd] 两条 —— 后者是
+      #      模块 BSS 里的函数指针, 说明模块是用 kallsyms_lookup_name() 取到内核函数地址后
+      #      【间接调用】的; 只有间接调用点会校验 KCFI 类型哈希。
+      #   2. 类型哈希就是函数入口前 4 字节。原厂 Image 里 shrink_slab 入口前 = 0xc3b4beac;
+      #      我们构建的 Image 里同位置 = 0xd65f03c0(即 ret, 上一个函数的结尾) → 根本没有哈希。
+      #   3. 两个内核里该函数的指令字节完全相同(paciasp; sub sp,sp,#0x2c0; stp x29,x30...),
+      #      说明不是原型差异; 对照符号 kfree 的类型哈希两边也完全一致(0x9390bcfa) →
+      #      哈希算法没问题, 唯独这一个函数缺哈希。
+      #   4. 上游 Linux 6.1 的 mm/vmscan.c 把它写成了 static:
+      #        static unsigned long shrink_slab(gfp_t gfp_mask, int nid, ...)
+      #      编译器据此认为它无需被间接调用, 于是不生成类型哈希。原厂(QCOM 内核)里它是带声明的
+      #      全局函数, 所以有哈希。
+      #   ※ 与 LTO 无关: LTO none(run 8) 与 LTO thin(run 14) 的哈希分布逐字节相同。
+      #
+      # 修复: 去掉 static 并补一条前置原型(CONFIG_WERROR=y 下 -Wmissing-prototypes 会报错),
+      #       恢复成与原厂相同的形态 → 类型哈希重新生成, 且原型一致, 值应当就是 0xc3b4beac。
+      - name: 修复 shrink_slab 缺失 KCFI 类型哈希 (厂商模块间接调用它)
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          set -e
+          VS="./common/mm/vmscan.c"
+          [ -f "$VS" ] || { echo "::error::找不到 $VS"; exit 1; }
+
+          echo "--- 修改前 ---"
+          grep -n 'shrink_slab' "$VS" | head -8
+
+          if grep -q '^static unsigned long shrink_slab(' "$VS"; then
+            sed -i 's/^static unsigned long shrink_slab(/unsigned long shrink_slab(/' "$VS"
+            echo "已去掉 shrink_slab 的 static"
+          fi
+          grep -q '^unsigned long shrink_slab(' "$VS" \
+            || { echo "::error::shrink_slab 非 static 化失败, 上游写法可能已变"; exit 1; }
+
+          PROTO='unsigned long shrink_slab(gfp_t gfp_mask, int nid, struct mem_cgroup *memcg, int priority);'
+          if ! grep -qF "$PROTO" "$VS"; then
+            sed -i "/^unsigned long shrink_slab(gfp_t gfp_mask, int nid,/i $PROTO" "$VS"
+            grep -qF "$PROTO" "$VS" \
+              || { echo "::error::补 shrink_slab 前置原型失败"; exit 1; }
+            echo "已补上 shrink_slab 前置原型"
+          fi
+
+          echo "--- 修改后 ---"
+          grep -n -A2 'shrink_slab(gfp_t gfp_mask' "$VS" | head -14
 
       - name: 配置内核名称
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -2084,15 +2139,13 @@ jobs:
           echo "mkbootimg os_version=${OS_VERSION} os_patch_level=${OS_PATCH} boot_sign=${{ inputs.boot_sign }}"
 
           OUT="boot.img"
-          # ★ module_blacklist 是内核原生启动参数, 阻止指定模块加载, 不需要改 vendor/vendor_dlkm 任何分区。
-          #   为什么需要: 魅族私有模块(mz_*)通过函数指针调用内核 mm/ 函数时会校验 CFI 类型哈希(kcfi),
-          #   而原厂 mm/ 是闭源魔改的(CONFIG_MZ_MM_PROTECT=y / mz_mm_protect.ko 等), 我们无法完全复刻其原型:
-          #     CFI failure at kshrink_slabd_func+0x104/0x16c [mz_kshrink_slabd]
-          #       (target: shrink_slab+0x0/0x3a4; expected type: 0xc3b4beac)
-          #     Kernel panic - not syncing: Oops - CFI: Fatal exception
-          #   → 现象: 开机约 90 秒后画面卡死, 2~3 秒后被看门狗复位重启。
-          #   mz_kshrink_slabd 只是魅族的内存回收优化, 屏蔽后走内核原生 shrinker 路径, 功能不受影响。
-          CMDLINE="module_blacklist=mz_kshrink_slabd"
+          # ★ 2026-10-03: 这里曾经传 module_blacklist=mz_kshrink_slabd, 但实测【完全无效】:
+          #   刷入 run 14 后设备上 lsmod 仍能看到 mz_kshrink_slabd —— GKI 的 boot.img cmdline
+          #   在 Android 12+ 已让位给 bootconfig, 实际启动参数来自 vendor_boot/ABL, 这里传的
+          #   cmdline 不会被采用(原厂 boot.img 的 cmdline 也是空的)。
+          #   真正的修复是让内核为 shrink_slab 生成 KCFI 类型哈希, 见前面
+          #   「修复 shrink_slab 缺失 KCFI 类型哈希」步骤, 因此这里恢复成空 cmdline。
+          CMDLINE=""
           $MKBOOTIMG --header_version 4 --kernel ./Image --output "$OUT" \
             --cmdline "$CMDLINE" \
             --os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"
