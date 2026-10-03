@@ -1,0 +1,118 @@
+编译尝试: 1
+开始时间: 2026-10-03T01:09:35Z
+当前 KSU 最新提交日期: 未知
+当前 SUSFS 最新提交日期: 2026-09-26 01:48:27 +0800
++ cd /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25
++ sed -i s/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/ ./common/build.config.gki.aarch64
++ sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
++ sed -i /KMI_SYMBOL_LIST_STRICT_MODE/d ./common/build.config.gki.aarch64
++ '[' -f build/build.sh ']'
++ FRAG=common/arch/arm64/configs/ksu.fragment
++ grep '^>'
++ diff /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ sed 's/^> //; s/^[[:space:]]*//'
++ true
++ cp /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ echo '=== KSU Fragment 内容 ==='
+=== KSU Fragment 内容 ===
++ cat common/arch/arm64/configs/ksu.fragment
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_KSU=y
+# CONFIG_TRIM_UNUSED_KSYMS is not set
+# CONFIG_PANIC_ON_OOPS is not set
+# 允许 adb shell dmesg 读取内核日志(否则 user 版构建下 shell 无权读, 排障只能靠抢 512K
+# 环形缓冲区的开机瞬间 —— 本次黑屏问题正是靠这个手段才定位到 msm_kgsl 的符号 CRC 失配)。
+# 只影响权限位, 不涉及任何导出符号/KMI。
+# CONFIG_SECURITY_DMESG_RESTRICT is not set
+CONFIG_PANIC_TIMEOUT=30
+# ★ 2026-10-03: 以下 6 项恢复成原厂 12.6 第二版的取值。
+#   依据: 三个 config 全部从镜像内嵌 IKCONFIG 提取后逐行核对(不是猜的) ——
+#   device/meizu21/ref_stock.config 与 work/cfg_v2.config 只差 2 行(Jenkins 路径字符串)。
+#   · DAMON / BLK_CGROUP_IOPRIO / TMPFS_XATTR / TMPFS_POSIX_ACL: 原厂关闭, 我们之前开着。
+#     DAMON 与 PAGE_IDLE_FLAG 不只是速度问题 —— 它们会改动 struct mm_struct 字段与
+#     PG_* 页标志位编号, 而厂商模块用的是 Meizu 头文件里的偏移与常量, 存在 KMI 错位风险。
+#     PAGE_IDLE_FLAG / DAMON_VADDR / DAMON_SYSFS 无需单列: 它们由 CONFIG_DAMON select,
+#     关掉 DAMON 会一并回到原厂取值(隐藏符号直接写进 fragment 会校验失败)。
+#   · ZRAM / ZSMALLOC: 原厂内核根本没有这两项。魅族的 swap 由厂商模块提供
+#     (lsmod: smartswap_zram + smart_zsmalloc), 而 smart_zsmalloc 自己就 DEF 了全部
+#     10 个 zs_* 符号(module_kmi_manifest.txt L36876-36885), 所以内核不需要 ZSMALLOC;
+#     实测设备上 lsmod 里从没加载过 zram/zsmalloc, 我们这两项配置纯属空转差异。
+# CONFIG_DAMON is not set
+# CONFIG_BLK_CGROUP_IOPRIO is not set
+# CONFIG_TMPFS_XATTR is not set
+# CONFIG_TMPFS_POSIX_ACL is not set
+# CONFIG_ZRAM is not set
+# CONFIG_ZSMALLOC is not set
+
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+# ★ 2026-10-03: 关闭 SUSFS 调试日志。ENABLE_LOG 会为每次钩子调用做日志输出,
+#   开机期要读几万个文件, 这些逐次调用累积起来是实打实的启动开销。
+#   功能不受影响 —— 它只是日志开关。
+# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
++ echo =========================
+=========================
++ FRAG_FLAG=
++ '[' -s common/arch/arm64/configs/ksu.fragment ']'
++ FRAG_FLAG=--defconfig_fragment=//common:arch/arm64/configs/ksu.fragment
++ '[' none = auto ']'
++ LTO_FLAG=--lto=none
++ echo LTO_FLAG=--lto=none
+LTO_FLAG=--lto=none
++ tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=none --defconfig_fragment=//common:arch/arm64/configs/ksu.fragment //common:kernel_aarch64_dist
+Extracting Bazel installation...
+Starting local Bazel server and connecting to it...
+INFO: Invocation ID: c5d22ac2-3ada-4054-b940-b98bd4ce0ad9
+Loading: 
+Loading: 
+Loading: 1 packages loaded
+Loading: 1 packages loaded
+    currently loading: common
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded)
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded, 0 targets configured)
+Analyzing: target //common:kernel_aarch64_dist (56 packages loaded, 8951 targets configured)
+INFO: Analyzed target //common:kernel_aarch64_dist (56 packages loaded, 93595 targets configured).
+ checking cached actions
+INFO: Found 1 target...
+[0 / 7] [Prepa] Creating source manifest for //common:kernel_aarch64_dist
+[153 / 423] [Prepa] Creating symlinks to in-tree tools @//build/kernel:hermetic-tools/zipinfo
+[377 / 423] checking cached actions
+[403 / 423] [Prepa] Generating build config @//common:kernel_aarch64_build_config ... ( 1 action running)
+[407 / 423] Creating abi_symbollist and report @//common:kernel_aarch64_kmi_symbol_list; 0s remote-cache, processwrapper-sandbox ... (2 actions running)
+[408 / 423] Creating abi_symbollist and report @//common:kernel_aarch64_kmi_symbol_list; 1s remote-cache, processwrapper-sandbox
+[409 / 423] Creating abi_symbollist.raw @//common:kernel_aarch64_raw_kmi_symbol_list; 0s remote-cache, processwrapper-sandbox
+[411 / 423] [Prepa] Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config
+[411 / 423] Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config; 0s local
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22: Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config failed: (Exit 1): bash failed: error executing KernelConfig command (from target //common:kernel_aarch64_config) /bin/bash -c ... (remaining 1 argument skipped)
+.config:7467:warning: override: reassigning to symbol TMPFS_XATTR
+.config:7468:warning: override: reassigning to symbol TMPFS_POSIX_ACL
+.config:7472:warning: override: KSU_SUSFS changes choice state
+ERROR: @//common:kernel_aarch64_config: 
+    CONFIG_TMPFS_XATTR: actual '', expected 'CONFIG_TMPFS_XATTR=y
+# CONFIG_TMPFS_XATTR is not set' from common/arch/arm64/configs/ksu.fragment.
+    CONFIG_TMPFS_POSIX_ACL: actual '', expected 'CONFIG_TMPFS_POSIX_ACL=y
+# CONFIG_TMPFS_POSIX_ACL is not set' from common/arch/arm64/configs/ksu.fragment.
+    CONFIG_DAMON: actual '', expected '#     PAGE_IDLE_FLAG / DAMON_VADDR / DAMON_SYSFS 无需单列: 它们由 CONFIG_DAMON select,
+# CONFIG_DAMON is not set' from common/arch/arm64/configs/ksu.fragment.
+    CONFIG_TMPFS_XATTR: actual '', expected 'CONFIG_TMPFS_XATTR=y
+# CONFIG_TMPFS_XATTR is not set' from common/arch/arm64/configs/ksu.fragment.
+    CONFIG_TMPFS_POSIX_ACL: actual '', expected 'CONFIG_TMPFS_POSIX_ACL=y
+# CONFIG_TMPFS_POSIX_ACL is not set' from common/arch/arm64/configs/ksu.fragment.
+    Are they declared in Kconfig?
+Target //common:kernel_aarch64_dist failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22 Middleman _middlemen/common_Skernel_Uaarch64_Udist-runfiles failed: (Exit 1): bash failed: error executing KernelConfig command (from target //common:kernel_aarch64_config) /bin/bash -c ... (remaining 1 argument skipped)
+INFO: Elapsed time: 31.643s, Critical Path: 8.48s
+INFO: 412 processes: 11 disk cache hit, 396 internal, 1 local, 4 processwrapper-sandbox.
+ERROR: Build did NOT complete successfully
++ exit 1
+结束时间: 2026-10-03T01:10:07Z
+退出码: 1

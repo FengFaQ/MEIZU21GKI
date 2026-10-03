@@ -1,0 +1,11 @@
+Android 版本: android14
+内核版本: 6.1.25
+安全补丁级别: 2023-10
+KernelSU 变体: ReSukiSU
+配置名称: android14-6.1-25
+Git 提交: 823689ef6c89711e1f058dffb056a6eb0b79a31d
+工作流地址: https://github.com/FengFaQ/MEIZU21GKI/actions/runs/37084731787
+编译尝试次数: 1
+最终退出码: 1
+KSU 提交日期: 未知
+SUSFS 提交日期: 2026-09-26 01:48:27 +0800
