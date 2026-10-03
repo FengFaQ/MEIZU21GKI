@@ -1,1 +1,0 @@
-no vmlinux or nm
