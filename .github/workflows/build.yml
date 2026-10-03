@@ -1874,6 +1874,28 @@ jobs:
           echo "=== KMI CRC 对齐报告(节选) ==="
           head -45 "$GITHUB_WORKSPACE/patch_crc_report.txt"
 
+      # CFI 类型哈希导出(诊断)。背景: CONFIG_CFI_CLANG=y 时, 厂商模块通过函数指针调用内核函数,
+      # 编译期会把"期望的 kcfi 类型哈希"写死在调用点; 内核侧该函数也带一个 __kcfi_typeid_<name>
+      # 绝对符号(值就是哈希)。两者不一致 → brk → "CFI failure ... (target: X; expected type: 0x..)"
+      # → panic → 看门狗复位。哈希由函数原型(含指针所指向对象的 const/volatile)决定,
+      # 所以原厂对 mm/ 等子系统的闭源魔改只要动过原型, 就会造成这类崩溃。
+      # 这里把内核所有 __kcfi_typeid_* 导出成产物, 与厂商模块调用点里的期望值逐一对账。
+      - name: CFI 类型哈希导出 (诊断)
+        if: always()
+        run: |
+          VM=$(find -L "$KERNEL_ROOT" -maxdepth 6 -name vmlinux -type f 2>/dev/null | head -1)
+          OUT="$GITHUB_WORKSPACE/cfi_typeids.txt"
+          if [ -n "$VM" ] && command -v nm >/dev/null 2>&1; then
+            nm "$VM" 2>/dev/null | grep '__kcfi_typeid_' | sort -k3 > "$OUT" || true
+            echo "内核 CFI 类型哈希: $(grep -c . "$OUT" || true) 条  (vmlinux=$VM)"
+            echo "=== 崩溃现场涉及的关键函数 ==="
+            grep -E '__kcfi_typeid_(shrink_slab|do_shrink_slab|reclaim_shmem_address_space)$' "$OUT" \
+              || echo "(未列出; 注意 nm 输出格式为 '<哈希> A __kcfi_typeid_<名字>')"
+          else
+            echo "::warning title=无法导出 CFI 类型哈希::没找到 vmlinux 或 nm"
+            echo "no vmlinux or nm" > "$OUT"
+          fi
+
       - name: 准备 Boot 镜像
         run: |
           mkdir -p bootimgs
@@ -2062,8 +2084,19 @@ jobs:
           echo "mkbootimg os_version=${OS_VERSION} os_patch_level=${OS_PATCH} boot_sign=${{ inputs.boot_sign }}"
 
           OUT="boot.img"
+          # ★ module_blacklist 是内核原生启动参数, 阻止指定模块加载, 不需要改 vendor/vendor_dlkm 任何分区。
+          #   为什么需要: 魅族私有模块(mz_*)通过函数指针调用内核 mm/ 函数时会校验 CFI 类型哈希(kcfi),
+          #   而原厂 mm/ 是闭源魔改的(CONFIG_MZ_MM_PROTECT=y / mz_mm_protect.ko 等), 我们无法完全复刻其原型:
+          #     CFI failure at kshrink_slabd_func+0x104/0x16c [mz_kshrink_slabd]
+          #       (target: shrink_slab+0x0/0x3a4; expected type: 0xc3b4beac)
+          #     Kernel panic - not syncing: Oops - CFI: Fatal exception
+          #   → 现象: 开机约 90 秒后画面卡死, 2~3 秒后被看门狗复位重启。
+          #   mz_kshrink_slabd 只是魅族的内存回收优化, 屏蔽后走内核原生 shrinker 路径, 功能不受影响。
+          CMDLINE="module_blacklist=mz_kshrink_slabd"
           $MKBOOTIMG --header_version 4 --kernel ./Image --output "$OUT" \
+            --cmdline "$CMDLINE" \
             --os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"
+          echo "boot.img cmdline: $CMDLINE"
           if [ "${{ inputs.boot_sign }}" = "不签名" ]; then
             # 与参考镜像同结构: 不加 AVB, 只把镜像零填充到分区大小
             # (避免分区尾部残留上一次刷入的旧 AVB footer)
@@ -2225,6 +2258,7 @@ jobs:
             Module.symvers
             Module.symvers.patched
             patch_crc_report.txt
+            cfi_typeids.txt
             source_revision.txt
             config_vs_stock.txt
           compression-level: 9
