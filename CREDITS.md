@@ -125,9 +125,10 @@
 |---|---|---|
 | `.github/`、`tools/`、`scripts/`、`config/`、`security_patch/`、`release/` | GPL-2.0-only | 本项目自身代码 |
 | `boot.img` / `AnyKernel3.zip`（构建产物） | GPL-2.0-only | Linux 6.1 + KernelSU kernel + SUSFS 补丁 |
-| `kernelsu/kernel/` | **GPL-2.0-only** | 目录内自带 `LICENSE`；源码 SPDX 实测为 `GPL-2.0-only`(8) / `GPL-2.0`(1)。**这是唯一被编译进内核的部分** |
-| `kernelsu/uapi/` | GPL-2.0-only | 随 kernel 部分一同使用 |
-| `kernelsu/` 其余（`manager/`、`js/`、`userspace/`、`docs/`） | GPL-3.0 | 上游 userspace，`kernelsu/LICENSE`。本构建**不编译**，仅用于还原 uapi 符号链接 |
+| 构建时从 GitHub 克隆的 ReSukiSU（`KernelSU/kernel/`） | **GPL-2.0-only** | 目录内自带 `kernel/LICENSE`；最新 `main` 的源码 SPDX 实测仍为 `GPL-2.0-only`(8) / `GPL-2.0`(1)。**这是唯一被编译进内核的部分** |
+| 构建时克隆的 ReSukiSU userspace（`manager/`、`js/`、`userspace/`） | GPL-3.0 | 上游 `LICENSE`，**本构建不编译** |
+| 发布所附带的 ReSukiSU 管理器 APK（arm64-v8a） | **GPL-3.0** | 取自上游 Release 的已编译产物。GPL 允许再分发，源码见上游仓库同 tag |
+| `kernelsu/`（仓库内置快照） | 按目录：`kernel/`+`uapi/` 为 GPL-2.0-only，其余 GPL-3.0 | **2026-10-03 起不再参与构建**（改为每次从 GitHub 拉取），保留仅为历史溯源 |
 | `susfs4ksu/` | GPL-3.0 | 上游 `LICENSE` 为 GPL-3.0 |
 | `susfs4ksu/kernel_patches/` | 上游未附单独声明 | 已核对上游 `50_add_susfs_in_gki-android14-6.1.patch` 原文：**整份补丁不含任何授权声明**，是纯 diff，作用于 GPL-2.0 内核 |
 | `zram/lz4/` | **BSD-2-Clause** | Yann Collet, Copyright (C) 2011-2023。原目录只有源码文件头的声明、无独立许可证文件，已补充 `zram/lz4/LICENSE` |

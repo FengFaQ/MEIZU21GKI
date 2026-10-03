@@ -141,19 +141,60 @@ git -C $f worktree remove $tmp --force         # 再 remove
 
 ---
 
+## KernelSU 源码来源（2026-10-03 起的硬规则）
+
+**每次编译都从 GitHub 现场拉取 ReSukiSU，不再使用仓库内置的 `kernelsu/`。**
+
+```
+默认: git clone https://github.com/ReSukiSU/ReSukiSU  然后 checkout main
+```
+
+这样做的目的：内核自带的 SUSFS 支持与 apk 签名/版本校验**始终对上最新版管理器 APK**。
+内置快照会随上游推进而落后（实测内置的 `34210a4d` 已落后上游 `main`，上游 tag 已到
+`v4.2.0-rc3`），用它等于把管理器版本钉死。
+
+拉最新不会影响 SUSFS：ReSukiSU 的 SUSFS 是**内置**的 —— `scripts/susfs_fixes/apply.sh` 里
+只有 `Official` 变体才打 `10_enable_susfs_for_ksu.patch`；而内核侧的
+`50_add_susfs_in_gki-*.patch` 作用于 ACK 内核树，与 KernelSU 版本无关。已核对最新 ReSukiSU
+仍提供我们启用的全部 10 个 `CONFIG_KSU_SUSFS_*` 选项。
+
+**要钉版本时不用改代码** —— 到仓库 `Settings → Secrets and variables → Actions → Variables`
+设两个变量即可：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `KSU_REPO` | `https://github.com/ReSukiSU/ReSukiSU` | 换仓库 |
+| `KSU_REF` | `main` | 钉到 tag/commit，例如 `v4.1.0`。设了它，发布时会配套取该 tag 的管理器 APK |
+
+`kernelsu/` 目录仍留在仓库里，但**已不参与构建**（仅作历史溯源与离线参考）。
+
+---
+
+## 配套管理器 APK
+
+发布时会自动从上游 ReSukiSU 的**最新 Release**取 `arm64-v8a` 版管理器 APK 一并上传
+（上游同时提供 `armeabi-v7a` / `universal` / `x86_64`，只取真机用的 arm64-v8a）。
+APK 会同时进入 `meizu21-latest` 与 `dist` 分支，因此本机被墙也能通过 dist 分支取到。
+
+注意上游目前发布的都是 rc 预发布，而 `/releases/latest` 会跳过预发布（实测返回 404），
+所以取的是发布列表里的最新一条；若设了 `KSU_REF=<tag>`，则优先取该 tag 的发布。
+取不到时只告警、不阻塞内核发布，并在 release 说明里写明"请自行下载"。
+
+管理器 APK 的许可证是 **GPL-3.0**（上游 `ReSukiSU/ReSukiSU`），源码同仓库可得。
+
+---
+
 ## 更新内置源码
 
-```powershell
-# KernelSU (ReSukiSU)
-git clone --depth 1 git@github.com:FengFaQ/ReSukiSU-fork.git tmp-ksu
-robocopy tmp-ksu kernelsu /E /XD .git      # 覆盖后同步修改 kernelsu/SOURCE.txt
+`kernelsu/`（ReSukiSU）已不再参与构建，通常不需要更新。只有 `susfs4ksu/` 仍需保持最新：
 
-# SUSFS
+```powershell
+# SUSFS —— 内置快照优先, 缺失才联网克隆
 git clone --depth 1 -b gki-android14-6.1 https://gitlab.com/simonpunk/susfs4ksu.git tmp-susfs
 robocopy tmp-susfs susfs4ksu /E /XD .git   # 覆盖后同步修改 susfs4ksu/SOURCE.txt
 ```
 
-改完 push 到 `main` 即自动重新构建。
+改完 push 到 `main` 即自动重新构建。（`kernelsu/` 若确实要更新，命令同前，但构建不会用到它。）
 
 ---
 

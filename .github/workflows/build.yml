@@ -1,4 +1,4 @@
-﻿name: 内核构建流程
+name: 内核构建流程
 
 permissions:
   contents: write
@@ -715,44 +715,44 @@ jobs:
               grep -q "drivers/kernelsu/Kconfig" common/drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' common/drivers/Kconfig
               ;;
             "ReSukiSU")
-              # 自包含: 仓库内已 vendored ReSukiSU 源码 (kernelsu/, 元数据见 kernelsu/SOURCE.txt)
-              # 其 kernel/Kbuild 要求存在 ../.git(submodule 检查) 且用 git 生成版本号 →
-              # 在 CI 工作区就地 git init 一个最小仓库(只在本次运行有效, 不进我们的 git 历史)
-              if [ -d "$GITHUB_WORKSPACE/kernelsu/kernel" ]; then
-                echo "添加 ReSukiSU (仓库内置 kernelsu/, 手动集成法)..."
-                KSU_SRC="$GITHUB_WORKSPACE/kernelsu"
-                if [ ! -e "$KSU_SRC/.git" ]; then
-                  (
-                    cd "$KSU_SRC"
-                    git init -q -b main
-                    git config user.email "ci@meizu21gki.local"
-                    git config user.name "MEIZU21GKI CI"
-                    git add -A
-                    git commit -q -m "vendored ReSukiSU snapshot ($(sed -n 's/^commit=//p' SOURCE.txt | head -1))"
-                    git tag v4.1.0
-                  )
-                  echo "内置源码已初始化为工作区本地 git 仓库(Kbuild 的版本号/submodule 检查需要)"
-                fi
-                ln -sfn "$KSU_SRC/kernel" common/drivers/kernelsu
-                # 保险: 上游把 kernel/include/uapi 和 manager/app/src/main/cpp/uapi 做成 symlink 指向根 uapi/,
-                # 在 Windows 上检出/拷贝时会退化成"内容是相对路径的小文本文件" → 编译时
-                # policy/app_profile.h 找不到 "uapi/app_profile.h"。这里就地还原成 symlink。
-                for _link in "$KSU_SRC/kernel/include/uapi" "$KSU_SRC/manager/app/src/main/cpp/uapi"; do
-                  if [ -f "$_link" ] && [ ! -d "$_link" ]; then
-                    _target=$(cat "$_link")
-                    if [ -d "$KSU_SRC/uapi" ]; then
-                      rm -f "$_link" && ln -sfn "$_target" "$_link" \
-                        && echo "已还原 symlink: $_link -> $_target"
-                    fi
-                  fi
-                done
-                grep -q "kernelsu" common/drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> common/drivers/Makefile
-                grep -q "drivers/kernelsu/Kconfig" common/drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' common/drivers/Kconfig
-                echo "KSU_SRC_DIR=$KSU_SRC" >> $GITHUB_ENV
-              else
-                echo "内置源码缺失 → 回退 ReSukiSU 官方 setup.sh..."
-                curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash $BRANCH
-              fi
+              # 克隆失败必须立刻停下来: 否则会带着一个断掉的 common/drivers/kernelsu 符号链接
+              # 一路编到很后面才报错, 白白浪费十几分钟。
+              set -e
+
+              # ★★★ 规则(2026-10-03): 不再使用仓库内置的 ReSukiSU 源码(kernelsu/) ★★★
+              #
+              # 每次编译都从 GitHub 现场拉取, 理由:
+              #   1. 让内核自带的 SUSFS 支持与 apk 签名/版本校验始终对上【最新版管理器 APK】;
+              #      内置快照会随上游推进而落后(实测内置的 34210a4d 已落后上游 main 一天,
+              #      上游 tag 已到 v4.2.0-rc3), 用它就等于把管理器版本钉死。
+              #   2. ReSukiSU 的 SUSFS 是【内置】的 —— 见 scripts/susfs_fixes/apply.sh:
+              #      只有 Official 变体才打 10_enable_susfs_for_ksu.patch, ReSukiSU 走内置分支。
+              #      所以拉最新不会影响 SUSFS; 而内核侧的 50_add_susfs_in_gki-*.patch 作用于
+              #      ACK 内核树, 与 KernelSU 版本无关。
+              #      已核对最新 ReSukiSU: 我们在「添加 SUSFS 配置」里启用的 10 个
+              #      CONFIG_KSU_SUSFS_* 选项它仍然全部提供。
+              #   3. 真实克隆带完整 git 历史与 tag ⇒ 不再需要旧版那套
+              #      "git init + 打 tag v4.1.0" 的假仓库, 也不再需要还原 uapi 符号链接
+              #      (那是 Windows 检出把 symlink 退化成文本文件才有的补救)。
+              #
+              # 需要钉住版本时(例如上游某次改动导致编不过), 不用改代码 ——
+              # 到仓库 Settings → Variables 设 KSU_REPO / KSU_REF 即可, 例如 KSU_REF=v4.1.0。
+              KSU_REPO="${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU}"
+              KSU_REF="${KSU_REF:-main}"
+              echo "ReSukiSU 来源: $KSU_REPO  (ref=$KSU_REF)"
+
+              git clone "$KSU_REPO" KernelSU
+              git -C KernelSU checkout "$KSU_REF"
+
+              echo "KSU 提交: $(git -C KernelSU rev-parse HEAD)"
+              echo "KSU 描述: $(git -C KernelSU describe --tags --always 2>/dev/null || echo '(无 tag)')"
+              echo "KSU 日期: $(git -C KernelSU log -1 --date=format:'%Y-%m-%d %H:%M:%S %z' --format='%cd')"
+
+              KSU_SRC="$PWD/KernelSU"
+              ln -sfn "$KSU_SRC/kernel" common/drivers/kernelsu
+              grep -q "kernelsu" common/drivers/Makefile || echo 'obj-$(CONFIG_KSU) += kernelsu/' >> common/drivers/Makefile
+              grep -q "drivers/kernelsu/Kconfig" common/drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' common/drivers/Kconfig
+              echo "KSU_SRC_DIR=$KSU_SRC" >> $GITHUB_ENV
               ;;
             *)
               if [ -z "$LEGACY_SUKISU_CONFIG" ]; then

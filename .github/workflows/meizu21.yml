@@ -24,7 +24,8 @@ on:
       - 'scripts/**'
       - 'security_patch/**'
       - 'zram/**'
-      - 'kernelsu/**'      # 内置 ReSukiSU 源码
+      # ★ 2026-10-03: 移除 'kernelsu/**' —— ReSukiSU 已改为每次编译从 GitHub 现场拉取,
+      #   仓库内置的 kernelsu/ 不再参与构建, 改它自然也不该触发构建。
       - 'susfs4ksu/**'     # 内置 SUSFS 补丁快照
       - 'tools/**'         # KMI 兼容层/CRC 对齐等工具
       - 'device/**'        # 设备模块 KMI 清单、原厂参考 config
@@ -32,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       ksu_variant:
-        description: 'KernelSU 变体 (ReSukiSU = 参考镜像血统, 内置源码)'
+        description: 'KernelSU 变体 (ReSukiSU = 参考镜像血统, 每次从 GitHub 拉最新)'
         required: true
         type: choice
         options: [ ReSukiSU, SukiSU, Official ]
@@ -175,11 +176,71 @@ jobs:
         with:
           path: ./artifacts
 
+      - name: 附带上游 ReSukiSU 管理器 APK (仅 arm64-v8a)
+        # 内核是从上游 GitHub main 现场编译的, 管理器同样取上游最新发布的 APK —— 两者同源,
+        # 版本校验才能对上。上游 assets 同时提供 armeabi-v7a / universal / x86_64, 只要真机用的
+        # arm64-v8a, 其余不取。
+        # 注意: 不能用 /releases/latest —— 该端点会跳过预发布, 而 ReSukiSU 目前发布的都是 rc,
+        # 实测它返回 404; 必须走列表接口取最新一条。
+        # 取不到只告警不失败: 上游 API 抖动不该拖垮内核发布。
+        continue-on-error: true
+        run: |
+          set -e
+          OUT="$GITHUB_WORKSPACE/artifacts/manager-apk"
+          mkdir -p "$OUT"
+          curl -fsSL -H 'User-Agent: MEIZU21GKI' -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/ReSukiSU/ReSukiSU/releases?per_page=20" \
+            -o /tmp/ksu-releases.json
+
+          KSU_REF="${{ vars.KSU_REF }}"
+          TAG=""
+          if [ -n "$KSU_REF" ] && [ "$KSU_REF" != "main" ]; then
+            TAG=$(jq -r --arg t "$KSU_REF" '.[] | select(.tag_name==$t) | .tag_name' /tmp/ksu-releases.json | head -1)
+            [ -n "$TAG" ] && echo "KSU_REF=$KSU_REF 命中上游发布: $TAG"
+          fi
+          [ -n "$TAG" ] || TAG=$(jq -r '.[0].tag_name // empty' /tmp/ksu-releases.json)
+          if [ -z "$TAG" ]; then
+            echo "::warning title=未能取到上游管理器 APK::ReSukiSU 发布列表为空"
+            exit 0
+          fi
+
+          URL=$(jq -r --arg t "$TAG" \
+            '.[] | select(.tag_name==$t) | .assets[] | select(.name|test("arm64-v8a")) | select(.name|endswith(".apk")) | .browser_download_url' \
+            /tmp/ksu-releases.json | head -1)
+          if [ -z "$URL" ]; then
+            echo "::warning title=未能取到上游管理器 APK::$TAG 里没有 arm64-v8a 的 apk"
+            exit 0
+          fi
+
+          NAME=$(basename "$URL")
+          echo "下载上游管理器 APK: $TAG / $NAME"
+          curl -fL --retry 3 -H 'User-Agent: MEIZU21GKI' -o "$OUT/$NAME" "$URL"
+
+          SIZE=$(stat -c %s "$OUT/$NAME")
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "::error title=上游 APK 体积异常::$SIZE bytes"; exit 1
+          fi
+          if ! head -c 2 "$OUT/$NAME" | grep -q 'PK'; then
+            echo "::error title=上游 APK 不是 zip 包::下载内容可能是错误页"; exit 1
+          fi
+          SHA=$(sha256sum "$OUT/$NAME" | cut -d' ' -f1)
+          echo "$TAG  $NAME  $SIZE bytes"
+          echo "sha256: $SHA"
+
+          echo "MANAGER_APK=$NAME" >> $GITHUB_ENV
+          echo "MANAGER_APK_TAG=$TAG" >> $GITHUB_ENV
+          echo "MANAGER_APK_SHA=$SHA" >> $GITHUB_ENV
+
       - name: Create prerelease and upload
         run: |
           set -e
           VARIANT="${{ inputs.ksu_variant || 'ReSukiSU' }}"
           TAG="meizu21-sukisu-${{ github.run_number }}"
+          APK_NOTE="配套管理器: 本次未取到上游 APK, 请到 ReSukiSU 仓库自行下载 arm64-v8a 版本"
+          if [ -n "${MANAGER_APK:-}" ]; then
+            APK_NOTE="配套管理器: ${MANAGER_APK}
+          (取自上游 release ${MANAGER_APK_TAG} 的 arm64-v8a 版, sha256 ${MANAGER_APK_SHA})"
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG exists, deleting"
             gh release delete "$TAG" --yes --cleanup-tag || true
@@ -188,7 +249,8 @@ jobs:
             --title "MEIZU21GKI $VARIANT+SUSFS android14-6.1.25-2023-10 (run ${{ github.run_number }})" \
             --notes "预览版本(preview)。GKI android14-6.1.25 / os_patch 2023-10 / LTO=none / KernelSU=$VARIANT + SUSFS。
           extra_config: CONFIG_TRIM_UNUSED_KSYMS=n, CONFIG_PANIC_ON_OOPS=n, CONFIG_PANIC_TIMEOUT=30 (对齐原厂与可启动参考)。
-          配套管理器: 与 $VARIANT 对应的管理器 APK。run ${{ github.run_number }} @ ${{ github.sha }}"
+          ${APK_NOTE}
+          run ${{ github.run_number }} @ ${{ github.sha }}"
           shopt -s nullglob
           FILES=()
           for f in ./artifacts/*/*; do
@@ -240,7 +302,7 @@ jobs:
             [ -f "$f" ] || continue
             cp "$f" .
           done
-          if ! ls *.zip *.img >/dev/null 2>&1; then
+          if ! ls *.zip *.img *.apk >/dev/null 2>&1; then
             echo "::error::no artifacts found to push"
             exit 1
           fi
@@ -250,6 +312,9 @@ jobs:
             echo "lto=none"
             echo "run=${{ github.run_number }}"
             echo "sha=${{ github.sha }}"
+            echo "manager_apk=${MANAGER_APK:-<未取到>}"
+            echo "manager_apk_tag=${MANAGER_APK_TAG:-}"
+            echo "manager_apk_sha256=${MANAGER_APK_SHA:-}"
           } > config.txt
           git add -A
           git commit -q -m "dist: meizu21-sukisu-${{ github.run_number }} assets (run ${GITHUB_RUN_ID}, sha ${GITHUB_SHA})"

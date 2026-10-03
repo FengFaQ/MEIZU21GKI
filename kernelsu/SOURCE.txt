@@ -1,5 +1,13 @@
 # 内置 KernelSU 源码来源 (vendored, 无 .git)
-# 更新方式: 重新克隆上游/Fork 后覆盖本目录, 并同步修改下面的元数据
+#
+# ★★ 2026-10-03 起: 本目录不再参与构建 ★★
+#   .github/workflows/build.yml 的 ReSukiSU 分支已改为【每次编译都从 GitHub 现场克隆】
+#   https://github.com/ReSukiSU/ReSukiSU (可用仓库变量 KSU_REPO / KSU_REF 覆盖, 例如钉到 v4.1.0)。
+#   目的: 内核自带的 SUSFS 支持与 apk 签名/版本校验始终对上【最新版管理器 APK】。
+#   本目录保留仅为历史溯源与离线参考。若哪天要重新启用内置源码, 除了改回 build.yml 的克隆逻辑,
+#   还要注意 Windows 检出会把 symlink 退化成文本文件(见 tools/verify_meizu21gki.py 里的对应检查)。
+#
+# 更新方式(仅在本目录仍需保持最新时): 重新克隆上游/Fork 后覆盖本目录, 并同步修改下面的元数据
 repo=https://github.com/FengFaQ/ReSukiSU-fork
 upstream=https://github.com/ReSukiSU/ReSukiSU
 branch=main

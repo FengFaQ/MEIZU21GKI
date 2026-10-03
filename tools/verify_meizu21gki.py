@@ -5,7 +5,7 @@ Checks
   1. 三个 workflow 齐备且 YAML 可解析; build.yml 有 contents:write。
   2. build.yml: LTO 可配置(默认 auto)、extra_config 追加到 DEFCONFIG、
      **两条** LTO 路径都遵循输入。
-  3. build.yml: 内置源码优先 —— ReSukiSU 用 $GITHUB_WORKSPACE/kernelsu(带 clone fallback);
+  3. build.yml: ReSukiSU 每次编译都从 GitHub 现场克隆(不再是内置 kernelsu/), 支持 KSU_REF 钉版本;
      SUSFS 检测 $GITHUB_WORKSPACE/susfs4ksu/kernel_patches 后不再联网克隆;
      KSU/SUSFS 来源元数据支持 .git 与 SOURCE.txt 两种情形。
   4. 失败日志通道 = 仓库 log/ 目录(不再 push build-logs 分支), 且日志 push 不再触发构建。
@@ -95,11 +95,15 @@ check("build.yml: --lto=thin 仅存在于 auto 分支",
 check("build.yml: extra_config 追加到 DEFCONFIG",
       'printf \'%s\\n\' "${{ inputs.extra_config }}" >> "$DEFCONFIG"' in bblob)
 
-# ---------- 3. 内置源码 ----------
-check("build.yml: ReSukiSU 使用内置 kernelsu/",
-      '"$GITHUB_WORKSPACE/kernelsu/kernel"' in bblob and 'KSU_SRC_DIR=' in bblob)
-check("build.yml: 内置缺失时回退官方 setup.sh",
-      "ReSukiSU/ReSukiSU/main/kernel/setup.sh" in bblob)
+# ---------- 3. KernelSU 来源 ----------
+# ★ 规则(2026-10-03): ReSukiSU 每次编译都从 GitHub 现场拉取, 不再使用仓库内置的 kernelsu/。
+#   目的: 内核自带的 SUSFS 支持与 apk 版本校验始终对上最新版管理器 APK。
+check("build.yml: ReSukiSU 从 GitHub 现场克隆",
+      'git clone "$KSU_REPO" KernelSU' in bblob and 'KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU' in bblob)
+check("build.yml: ReSukiSU 支持 KSU_REF 覆盖(可钉到 tag)",
+      'KSU_REF:-main' in bblob and 'git -C KernelSU checkout "$KSU_REF"' in bblob)
+check("build.yml: ReSukiSU 已不再使用内置 kernelsu/",
+      '"$GITHUB_WORKSPACE/kernelsu/kernel"' not in bblob and 'git tag v4.1.0' not in bblob)
 check("build.yml: SUSFS 检测内置 kernel_patches",
       '"$GITHUB_WORKSPACE/susfs4ksu/kernel_patches"' in bblob)
 check("build.yml: SUSFS 仍保留联网克隆回退", "gitlab.com/simonpunk/susfs4ksu.git" in bblob)
@@ -182,11 +186,21 @@ check("build.yml: 关掉 ZRAM/ZSMALLOC 时必须同步清理 common/modules.bzl 
 push = m[True]["push"]
 check("meizu21.yml: 触发路径不含 log/**",
       not any(str(p).startswith("log") for p in push["paths"]), str(push["paths"]))
-check("meizu21.yml: 触发路径含 kernelsu/ 与 susfs4ksu/",
-      "kernelsu/**" in push["paths"] and "susfs4ksu/**" in push["paths"])
+check("meizu21.yml: 触发路径不含 kernelsu/(已不再使用内置源码)",
+      "kernelsu/**" not in push["paths"] and "susfs4ksu/**" in push["paths"], str(push["paths"]))
 rel = shell_text({"jobs": {"r": m["jobs"]["release"]}})
 check("meizu21.yml: release 用 --prerelease", rel.count("--prerelease") >= 2)
 check("meizu21.yml: 产物推 dist 分支", "dist:dist" in rel)
+# 配套管理器 APK: 只取 arm64-v8a; 不能用会跳过预发布的 /releases/latest; 取不到不许拖垮发布
+check("meizu21.yml: 发布附带上游管理器 APK",
+      "ReSukiSU/ReSukiSU/releases?per_page=" in rel and 'test("arm64-v8a")' in rel)
+check("meizu21.yml: 不误用会跳过预发布的 /releases/latest",
+      "releases/latest" not in rel)
+check("meizu21.yml: APK 取不到不阻塞发布",
+      any(s.get("continue-on-error") for s in m["jobs"]["release"]["steps"]
+          if "APK" in str(s.get("name", ""))))
+check("meizu21.yml: APK 一并进 dist 分支",
+      "*.apk" in rel and "manager_apk=" in rel)
 bad = [k for k in mw if k not in decl]
 check("meizu21.yml: with 键全部在 build.yml 声明", not bad, str(bad))
 
@@ -204,12 +218,15 @@ for d, marker in (("kernelsu", "kernel"), ("susfs4ksu", "kernel_patches"), ("dev
     check(f"{d}/ 存在且有 SOURCE.txt",
           os.path.isdir(os.path.join(p, marker)) and os.path.isfile(os.path.join(p, "SOURCE.txt")))
 
-# ---------- 6b. vendored 源码完整性(Windows 拷贝会把 symlink 变成文本文件 → 编译找不到 uapi 头) ----------
-uapi = os.path.join(R, "kernelsu", "kernel", "include", "uapi", "app_profile.h")
-check("kernelsu/kernel/include/uapi/ 是真实目录(不是 Windows 还原的 symlink 文本文件)",
-      os.path.isfile(uapi), uapi)
-check("kernelsu/manager/.../cpp/uapi/ 已实体化",
-      os.path.isfile(os.path.join(R, "kernelsu", "manager", "app", "src", "main", "cpp", "uapi", "app_profile.h")))
+# ---------- 6b. vendored 源码完整性 ----------
+# ★ 2026-10-03 起构建不再使用 kernelsu/(每次从 GitHub 拉), 这些检查只在目录仍存在时执行 ——
+#   保留是为了防止"哪天又把内置源码捡回来编译"却不做 Windows symlink 补救。
+if os.path.isdir(os.path.join(R, "kernelsu")):
+    uapi = os.path.join(R, "kernelsu", "kernel", "include", "uapi", "app_profile.h")
+    check("kernelsu/kernel/include/uapi/ 是真实目录(Windows 会把 symlink 变成文本文件)",
+          os.path.isfile(uapi), uapi)
+    check("kernelsu/manager/.../cpp/uapi/ 已实体化",
+          os.path.isfile(os.path.join(R, "kernelsu", "manager", "app", "src", "main", "cpp", "uapi", "app_profile.h")))
 
 mangled = []
 for d in ("kernelsu", "susfs4ksu", "device"):
