@@ -29,13 +29,12 @@ EXPECT_EXTRA = [
     "# 只影响权限位, 不涉及任何导出符号/KMI。",
     "# CONFIG_SECURITY_DMESG_RESTRICT is not set",
     "CONFIG_PANIC_TIMEOUT=30",
-    # ★ 2026-10-03: 恢复原厂取值 / 去掉空转的 zram 模块
+    # ★ 2026-10-03: 恢复原厂取值(DAMON / BLK_CGROUP_IOPRIO)
     # (只列 CONFIG_ 行做子集比对, 注释行不逐一比对, 避免文案微调就报错)
-    # ※ TMPFS_XATTR / TMPFS_POSIX_ACL 不在此列: 它们是 CI 为 KernelSU 主动开的, 见下方冲突检查
+    # ※ TMPFS_XATTR / TMPFS_POSIX_ACL 不在此列: 它们是 CI 为 KernelSU 主动开的
+    # ※ ZRAM / ZSMALLOC 已撤回(run 16 撞 modules.bzl、run 18 撞 KMI 符号清单, 且无收益)
     "# CONFIG_DAMON is not set",
     "# CONFIG_BLK_CGROUP_IOPRIO is not set",
-    "# CONFIG_ZRAM is not set",
-    "# CONFIG_ZSMALLOC is not set",
 ]
 fail = 0
 
@@ -278,6 +277,15 @@ check("build.yml: boot.img 结构自检(大小/头部/无 cmdline)存在",
 check("build.yml: boot.img cmdline 为空(原厂也是空; cmdline 会进 bootconfig 而非此处)",
       'CMDLINE=""' in bblob)
 check("tools/bootcompare.py 存在(boot 镜像结构分析工具)", os.path.isfile(os.path.join(R, "tools", "bootcompare.py")))
+# ★ CFI 判据必须是"读 Image 里函数入口前 4 字节", 不能是 grep nm 的 __kcfi_typeid_ 具名符号 ——
+#   实测 kfree 在 Image 里有内联哈希 0x9390bcfa 但 nm 里没有 __kcfi_typeid_kfree, 具名符号不可靠。
+check("tools/check_kcfi_typeid.py 存在(KCFI 内联哈希判据)",
+      os.path.isfile(os.path.join(R, "tools", "check_kcfi_typeid.py")))
+check("build.yml: CI 用 Image 内联哈希断言 shrink_slab == 0xc3b4beac",
+      "check_kcfi_typeid.py" in bblob and "--nm" in bblob
+      and "shrink_slab c3b4beac" in bblob, "缺 CI 端 CFI 断言")
+check("build.yml: 不再把 nm 的 __kcfi_typeid_ 具名符号当判据",
+      'grep -E \'__kcfi_typeid_(shrink_slab' not in bblob)
 check("build.yml: 版本串校验不匹配时硬失败(不产出坏包)",
       "内核版本串不匹配" in bblob and bblob.count("exit 1") >= 1)
 check("build.yml: 打印 vermagic 便于核对", "SMP preempt mod_unload modversions aarch64" in bblob)

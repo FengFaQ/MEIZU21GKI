@@ -128,18 +128,25 @@ jobs:
       #      fragment 是用 "diff gki_defconfig.orig gki_defconfig | grep '^>'" 生成的,
       #      任何被 append 的行都会进 fragment, 冲突不会自动消解。
       #
-      # ★ 2026-10-03(run 16) 相对 run 14 新增 4 项, 取值全部来自原厂 12.6 第二版镜像的内嵌
-      #   IKCONFIG(与 device/meizu21/ref_stock.config 逐行核对, 只差 2 行 Jenkins 路径字符串):
-      #   · DAMON / BLK_CGROUP_IOPRIO: 原厂关闭, 我们之前开着。DAMON 会改动 struct mm_struct
-      #     字段, PAGE_IDLE_FLAG 会改动 PG_* 页标志位编号 —— 厂商模块用的是 Meizu 头文件里的
-      #     偏移与常量, 这类改动有 KMI 错位风险, 不只是速度问题。
+      # ★ 2026-10-03(run 19) 相对 run 14 新增 2 项(DAMON / BLK_CGROUP_IOPRIO), 取值来自原厂
+      #   12.6 第二版镜像的内嵌 IKCONFIG(与 device/meizu21/ref_stock.config 逐行核对过):
+      #   · DAMON: 原厂关闭, 我们之前开着。它会改动 struct mm_struct 字段, 而 PAGE_IDLE_FLAG
+      #     会改动 PG_* 页标志位编号 —— 厂商模块用的是 Meizu 头文件里的偏移与常量, 这类改动
+      #     有 KMI 错位风险, 不只是速度问题。
       #     (PAGE_IDLE_FLAG / DAMON_VADDR / DAMON_SYSFS 不用单列: 它们由 DAMON select, 关掉
       #      DAMON 会一并回到原厂取值; 隐藏符号直接写进来反而会被校验拒掉。)
-      #   · ZRAM / ZSMALLOC: 原厂内核根本没有。魅族 swap 由厂商模块 smartswap_zram +
-      #     smart_zsmalloc 提供, 而 smart_zsmalloc 自己就 DEF 了全部 10 个 zs_* 符号
-      #     (module_kmi_manifest.txt L36876-36885), 内核不需要 ZSMALLOC; 实测设备 lsmod 里
-      #     也从没加载过 zram/zsmalloc, 这两项纯属空转差异。
-      #   ※ TMPFS_XATTR / TMPFS_POSIX_ACL 这次【故意没有】恢复成原厂值 —— 它们是 CI 的
+      #     实测: run 18 的 KMI 校验只报了 10 个 zs_* 缺失, 没有任何 damon_* —— 这两项是干净的。
+      #   ※ ZRAM / ZSMALLOC 原厂确实也没有(魅族 swap 由厂商模块 smartswap_zram +
+      #     smart_zsmalloc 提供, smart_zsmalloc 自己就 DEF 了全部 10 个 zs_* 符号,
+      #     module_kmi_manifest.txt L36876-36885), 我们曾按"对齐原厂"把它们关掉, 但连撞两堵墙:
+      #       run 16: ERROR: Unable to find drivers/block/zram/zram.ko / mm/zsmalloc.ko
+      #               (GKI 模块清单 common/modules.bzl 里列着这两个 .ko)
+      #       run 18: Symbols missing from the ksymtab: zs_compact ... zs_unmap_object
+      #               (GKI 的 KMI 符号清单里列着 zs_*, kleaf 的 kmi_symbol_list_strict_mode 校验)
+      #     而关掉它们【没有任何功能或性能收益】—— 实测设备 lsmod 里从没加载过 zram/zsmalloc,
+      #     即内核里这两个模块本来是空转的。既然要改就得同时维护模块清单 + KMI 符号清单两处,
+      #     收益又不明确, 就先撤回(保持 =m), 等有可开机版本后再单独做。
+      #   ※ TMPFS_XATTR / TMPFS_POSIX_ACL 也【故意没有】恢复成原厂值 —— 它们是 CI 的
       #     「配置内核选项」步骤为 KernelSU 主动开的(KSU 的模块挂载依赖 tmpfs xattr),
       #     关掉会打断 KSU 的挂载路径。而且这两项与 KMI 无关: 只影响 shmem 内部结构,
       #     不动 PG_* 位序, 也不动 struct mm_struct。
@@ -153,8 +160,6 @@ jobs:
         CONFIG_PANIC_TIMEOUT=30
         # CONFIG_DAMON is not set
         # CONFIG_BLK_CGROUP_IOPRIO is not set
-        # CONFIG_ZRAM is not set
-        # CONFIG_ZSMALLOC is not set
 
   release:
     needs: build-kernel

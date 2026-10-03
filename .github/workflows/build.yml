@@ -1465,23 +1465,15 @@ jobs:
           CONFIG_TMPFS_POSIX_ACL=y
           EOF
 
-          # ★ 2026-10-03: 关掉 CONFIG_ZRAM / CONFIG_ZSMALLOC 时, 必须同步删掉 GKI 模块清单里的
-          #   对应条目, 否则 kleaf 打包阶段会失败(实测 run 16):
-          #     ERROR: Unable to find drivers/block/zram/zram.ko in any of the following directories:
-          #       bazel-out/k8-fastbuild/bin/common/kernel_aarch64/staging/lib/modules/6.1.25-.../kernel
-          #     Unable to find mm/zsmalloc.ko in any of the following directories: ...
-          #   因为 meizu21.yml 的 extra_config 里把这两项恢复成了原厂值(# ... is not set),
-          #   内核不再产出这两个 .ko。做法与下面 use_zram 分支里的删除语句一致。
-          #   (原厂内核同样没有 zram/zsmalloc: 魅族 swap 由厂商模块 smartswap_zram +
-          #    smart_zsmalloc 提供, 而 smart_zsmalloc 自己 DEF 了全部 10 个 zs_* 符号。)
-          if [ -f common/modules.bzl ]; then
-            # sed 幂等: 匹配不到就什么都不做, 避免因为清单写法变化而漏删进而编译失败
-            sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' common/modules.bzl
-            echo "已清理 common/modules.bzl 的 zram/zsmalloc 条目"
-            grep -nE 'zram|zsmalloc' common/modules.bzl || echo "  (modules.bzl 里已无 zram/zsmalloc)"
-          else
-            echo "::warning::common/modules.bzl 不存在, 跳过 zram/zsmalloc 清单清理"
-          fi
+          # ★ 2026-10-03: 关于 CONFIG_ZRAM / CONFIG_ZSMALLOC —— 已【撤回】关闭它们的改动。
+          #   原厂内核确实没有这两项, 但关掉它们会连锁触发两处 GKI 清单校验(各烧掉一轮构建):
+          #     run 16: ERROR: Unable to find drivers/block/zram/zram.ko / mm/zsmalloc.ko
+          #             (GKI 模块清单 common/modules.bzl 里列着这两个 .ko)
+          #     run 18: Symbols missing from the ksymtab: zs_compact ... zs_unmap_object
+          #             (GKI 的 KMI 符号清单里列着 zs_*, kmi_symbol_list_strict_mode 校验失败)
+          #   而关掉它们没有任何功能/性能收益 —— 设备 lsmod 里从没加载过 zram/zsmalloc,
+          #   内核里这两个模块本来就是空转的。所以先保持 =m(与 run 14 一致), 不再动它;
+          #   若以后要关, 必须同时处理 common/modules.bzl 与 KMI 符号清单两处。
 
           # 禁用KSU 时源码里没有 KernelSU，CONFIG_KSU 不存在，写入会被 bazel 的 defconfig 检查拒绝
           if [ "${{ inputs.ksu_mode }}" != "禁用KSU" ]; then
@@ -1954,26 +1946,35 @@ jobs:
           echo "=== KMI CRC 对齐报告(节选) ==="
           head -45 "$GITHUB_WORKSPACE/patch_crc_report.txt"
 
-      # CFI 类型哈希导出(诊断)。背景: CONFIG_CFI_CLANG=y 时, 厂商模块通过函数指针调用内核函数,
-      # 编译期会把"期望的 kcfi 类型哈希"写死在调用点; 内核侧该函数也带一个 __kcfi_typeid_<name>
-      # 绝对符号(值就是哈希)。两者不一致 → brk → "CFI failure ... (target: X; expected type: 0x..)"
-      # → panic → 看门狗复位。哈希由函数原型(含指针所指向对象的 const/volatile)决定,
-      # 所以原厂对 mm/ 等子系统的闭源魔改只要动过原型, 就会造成这类崩溃。
-      # 这里把内核所有 __kcfi_typeid_* 导出成产物, 与厂商模块调用点里的期望值逐一对账。
-      - name: CFI 类型哈希导出 (诊断)
+      # CFI 类型哈希核对。背景: CONFIG_CFI_CLANG=y 时, 厂商模块通过函数指针间接调用内核函数,
+      # 编译期会把"期望的 kcfi 类型哈希"写死在调用点; 内核侧该函数入口【前 4 字节】就是它的
+      # 类型哈希。两者不一致 → brk → "CFI failure ... (target: shrink_slab; expected type: ...)"
+      # → panic → 看门狗复位(run 14 实测在开机约 90 秒时崩)。
+      #
+      # ★ 判据只认 Image 里的内联 4 字节, 【不要】用 nm 的 __kcfi_typeid_<name> 具名符号:
+      #   两者是两回事 —— 具名符号只在类型哈希需要跨编译单元引用时才生成。实测对照:
+      #   kfree 在 Image 里有内联哈希 0x9390bcfa(原厂与我们的镜像逐字节相同), 但 nm 里
+      #   根本没有 __kcfi_typeid_kfree。所以 grep 具名符号既有假阴性也有假阳性。
+      #   本步骤用的方法先在原厂镜像上验证过: shrink_slab 入口前 = 0xc3b4beac (MATCH)。
+      - name: CFI 类型哈希核对 (读 Image 里函数入口前 4 字节)
         if: always()
         run: |
           VM=$(find -L "$KERNEL_ROOT" -maxdepth 6 -name vmlinux -type f 2>/dev/null | head -1)
+          IMG=$(find -L "$KERNEL_ROOT" -maxdepth 6 -path '*kernel_aarch64/Image' -type f 2>/dev/null | head -1)
           OUT="$GITHUB_WORKSPACE/cfi_typeids.txt"
           if [ -n "$VM" ] && command -v nm >/dev/null 2>&1; then
             nm "$VM" 2>/dev/null | grep '__kcfi_typeid_' | sort -k3 > "$OUT" || true
-            echo "内核 CFI 类型哈希: $(grep -c . "$OUT" || true) 条  (vmlinux=$VM)"
-            echo "=== 崩溃现场涉及的关键函数 ==="
-            grep -E '__kcfi_typeid_(shrink_slab|do_shrink_slab|reclaim_shmem_address_space)$' "$OUT" \
-              || echo "(未列出; 注意 nm 输出格式为 '<哈希> A __kcfi_typeid_<名字>')"
+            echo "内核 __kcfi_typeid_* 具名符号: $(grep -c . "$OUT" || true) 条 (仅供参考, 非判据)"
           else
-            echo "::warning title=无法导出 CFI 类型哈希::没找到 vmlinux 或 nm"
             echo "no vmlinux or nm" > "$OUT"
+          fi
+          echo "vmlinux=$VM"
+          echo "Image  =$IMG"
+          if [ -n "$IMG" ] && [ -n "$VM" ] && [ -f "$GITHUB_WORKSPACE/tools/check_kcfi_typeid.py" ]; then
+            python3 "$GITHUB_WORKSPACE/tools/check_kcfi_typeid.py" "$IMG" --nm "$VM" shrink_slab c3b4beac \
+              || { echo "::error title=shrink_slab 仍缺 KCFI 类型哈希::厂商模块 mz_kshrink_slabd 用 kallsyms 取到它的地址后间接调用, 调用点会校验 CFI。缺哈希 ⇒ 刷入后开机约 90 秒 CFI failure → panic。这一版不要刷。"; exit 1; }
+          else
+            echo "::warning title=无法核对内联类型哈希::缺 Image / vmlinux / 工具"
           fi
 
       - name: 准备 Boot 镜像
