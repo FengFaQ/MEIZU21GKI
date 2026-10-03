@@ -14,6 +14,7 @@ Checks
   6. 内置目录存在且带 SOURCE.txt; 无 >100MB 单文件(GitHub 限制)。
 """
 import os
+import re
 import sys
 
 import yaml
@@ -30,10 +31,9 @@ EXPECT_EXTRA = [
     "CONFIG_PANIC_TIMEOUT=30",
     # ★ 2026-10-03: 恢复原厂取值 / 去掉空转的 zram 模块
     # (只列 CONFIG_ 行做子集比对, 注释行不逐一比对, 避免文案微调就报错)
+    # ※ TMPFS_XATTR / TMPFS_POSIX_ACL 不在此列: 它们是 CI 为 KernelSU 主动开的, 见下方冲突检查
     "# CONFIG_DAMON is not set",
     "# CONFIG_BLK_CGROUP_IOPRIO is not set",
-    "# CONFIG_TMPFS_XATTR is not set",
-    "# CONFIG_TMPFS_POSIX_ACL is not set",
     "# CONFIG_ZRAM is not set",
     "# CONFIG_ZSMALLOC is not set",
 ]
@@ -130,6 +130,48 @@ check("meizu21.yml: lto 默认 none (与原厂一致; CFI 不依赖 LTO, 见 bui
 extra = [ln.strip() for ln in (mw.get("extra_config") or "").strip().splitlines()]
 _missing = [e for e in EXPECT_EXTRA if e not in extra]
 check("meizu21.yml: extra_config 覆盖全部期望配置项", not _missing, "missing=%s" % _missing)
+
+# ---------- 2b. kleaf fragment 校验的两个坑(run 15 实际编译失败两次) ----------
+# ① fragment 是用 "diff gki_defconfig.orig gki_defconfig | grep '^>'" 生成的, 所以 extra_config
+#    块内每一行都会原样进入 fragment。
+# ② kleaf 的校验器会把【注释行】连同紧跟的那行 config 一起当成该符号的"期望值"文本;
+#    如果注释里出现了 CONFIG_XXX 字样就会被粘连, 报
+#      expected '# ... CONFIG_DAMON select,\n# CONFIG_DAMON is not set'
+#    => 块内注释行禁止出现 CONFIG_XXX 字样。
+_bad_cmt = [ln for ln in extra
+            if ln.startswith("#") and "CONFIG_" in ln and not ln.startswith("# CONFIG_")]
+check("meizu21.yml: extra_config 注释行不得含 CONFIG_XXX 字样(kleaf 会粘连)",
+      not _bad_cmt, str(_bad_cmt))
+# ③ 同一符号两条相反声明 -> 校验器报 expected 里同时有两行, 判定自相矛盾。
+#    典型: CI 的「配置内核选项」步骤已 append CONFIG_TMPFS_XATTR=y。
+_syms = {}
+_dup = []
+for _ln in extra:
+    if _ln.startswith("# CONFIG_") and _ln.endswith(" is not set"):
+        _s, _v = _ln[2:-len(" is not set")].strip(), "n"
+    elif _ln.startswith("CONFIG_") and "=" in _ln:
+        _s, _v = _ln.split("=", 1)
+    else:
+        continue
+    if _s in _syms and _syms[_s] != _v:
+        _dup.append(_s)
+    _syms[_s] = _v
+check("meizu21.yml: extra_config 同一符号不得有相反声明", not _dup, str(_dup))
+# ④ 与 build.yml 里硬写进 DEFCONFIG 的符号交叉检查, 保证上面那条不会因为改别处而失效。
+_forced = set()
+for _st in steps_of(b):
+    # 只统计【无条件】步骤: 带 if 的步骤(如 use_zram 控制的 ZRAM 补丁栈)本次不会执行, 不算强制打开
+    if _st.get("if"):
+        continue
+    _txt = _st.get("run") or ""
+    _w = _st.get("with") or {}
+    if isinstance(_w.get("command"), str):
+        _txt += "\n" + _w["command"]
+    for _m in re.findall(r'^CONFIG_([A-Z0-9_]+)=', _txt, re.M):
+        _forced.add("CONFIG_" + _m)
+_conflict = sorted(s for s, v in _syms.items() if v == "n" and s in _forced)
+check("meizu21.yml: extra_config 关掉的符号不与 build.yml 强制打开的冲突",
+      not _conflict, "conflict=%s" % _conflict)
 push = m[True]["push"]
 check("meizu21.yml: 触发路径不含 log/**",
       not any(str(p).startswith("log") for p in push["paths"]), str(push["paths"]))

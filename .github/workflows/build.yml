@@ -1453,6 +1453,13 @@ jobs:
       - name: 配置内核选项
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
+          # ★ TMPFS_XATTR / TMPFS_POSIX_ACL 是 KernelSU 需要的(KSU 的模块挂载依赖 tmpfs xattr),
+          #   原厂内核没有 KSU 所以能关, 我们不能关; 而且这两项与 KMI 无关(只影响 shmem 内部结构,
+          #   不动 PG_* 位序, 也不动 struct mm_struct)。
+          #   ⚠ 一旦这里写了这两个符号, meizu21.yml 的 extra_config 里就【不能】再写相反的声明 ——
+          #   fragment 是 "diff gki_defconfig.orig gki_defconfig | grep '^>'" 生成的, 同符号两条
+          #   相反声明会让 kleaf 的 fragment 校验判定自相矛盾而编译失败(实测 run 15)。
+          #   tools/verify_meizu21gki.py 里有对应的静态检查。
           cat >> "$DEFCONFIG" << 'EOF'
           CONFIG_TMPFS_XATTR=y
           CONFIG_TMPFS_POSIX_ACL=y

@@ -114,8 +114,35 @@ jobs:
       # 不签名 = 与"能启动的参考镜像"同结构(不加 AVB footer, 只零填充到分区大小)
       boot_sign: "不签名"
       # 对齐原厂 / 可启动参考的 .config(三方对比结论, 见 README)
-      # 注意: 关闭型配置必须写成 "# CONFIG_X is not set" —— 写 "CONFIG_X=n" 会被 kleaf
-      # 的 fragment 校验判为 actual '' != expected 'n' 而 fail(实测 run #1)
+      # ★ 三条硬性规则, 全都是实际编译失败换来的(kleaf 的 fragment 校验比想象中严):
+      #   ① 关闭型配置必须写成 "# CONFIG_X is not set"。写 "CONFIG_X=n" 会被判
+      #      actual '' != expected 'n' 而 fail(实测 run 1)。
+      #   ② extra_config 块内的注释行里【绝对不能出现 CONFIG_XXX 字样】。校验器会把这种
+      #      注释连同紧跟着的那行 config 一起当成该符号的"期望值"文本, 于是报:
+      #        CONFIG_DAMON: actual '', expected '# ...它们由 CONFIG_DAMON select,
+      #        # CONFIG_DAMON is not set'(实测 run 15)
+      #      => 解释性文字一律写在本块【外面】(YAML 注释), 块内只留纯配置行。
+      #   ③ 同一个符号不能出现两条相反声明。CI 的「配置内核选项」步骤已经加了
+      #      CONFIG_TMPFS_XATTR=y, 这里再写 "# CONFIG_TMPFS_XATTR is not set" 就成了
+      #      自相矛盾(expected 里同时有两行)而 fail(实测 run 15)。
+      #      fragment 是用 "diff gki_defconfig.orig gki_defconfig | grep '^>'" 生成的,
+      #      任何被 append 的行都会进 fragment, 冲突不会自动消解。
+      #
+      # ★ 2026-10-03(run 16) 相对 run 14 新增 4 项, 取值全部来自原厂 12.6 第二版镜像的内嵌
+      #   IKCONFIG(与 device/meizu21/ref_stock.config 逐行核对, 只差 2 行 Jenkins 路径字符串):
+      #   · DAMON / BLK_CGROUP_IOPRIO: 原厂关闭, 我们之前开着。DAMON 会改动 struct mm_struct
+      #     字段, PAGE_IDLE_FLAG 会改动 PG_* 页标志位编号 —— 厂商模块用的是 Meizu 头文件里的
+      #     偏移与常量, 这类改动有 KMI 错位风险, 不只是速度问题。
+      #     (PAGE_IDLE_FLAG / DAMON_VADDR / DAMON_SYSFS 不用单列: 它们由 DAMON select, 关掉
+      #      DAMON 会一并回到原厂取值; 隐藏符号直接写进来反而会被校验拒掉。)
+      #   · ZRAM / ZSMALLOC: 原厂内核根本没有。魅族 swap 由厂商模块 smartswap_zram +
+      #     smart_zsmalloc 提供, 而 smart_zsmalloc 自己就 DEF 了全部 10 个 zs_* 符号
+      #     (module_kmi_manifest.txt L36876-36885), 内核不需要 ZSMALLOC; 实测设备 lsmod 里
+      #     也从没加载过 zram/zsmalloc, 这两项纯属空转差异。
+      #   ※ TMPFS_XATTR / TMPFS_POSIX_ACL 这次【故意没有】恢复成原厂值 —— 它们是 CI 的
+      #     「配置内核选项」步骤为 KernelSU 主动开的(KSU 的模块挂载依赖 tmpfs xattr),
+      #     关掉会打断 KSU 的挂载路径。而且这两项与 KMI 无关: 只影响 shmem 内部结构,
+      #     不动 PG_* 位序, 也不动 struct mm_struct。
       extra_config: |
         # CONFIG_TRIM_UNUSED_KSYMS is not set
         # CONFIG_PANIC_ON_OOPS is not set
@@ -124,22 +151,8 @@ jobs:
         # 只影响权限位, 不涉及任何导出符号/KMI。
         # CONFIG_SECURITY_DMESG_RESTRICT is not set
         CONFIG_PANIC_TIMEOUT=30
-        # ★ 2026-10-03: 以下 6 项恢复成原厂 12.6 第二版的取值。
-        #   依据: 三个 config 全部从镜像内嵌 IKCONFIG 提取后逐行核对(不是猜的) ——
-        #   device/meizu21/ref_stock.config 与 work/cfg_v2.config 只差 2 行(Jenkins 路径字符串)。
-        #   · DAMON / BLK_CGROUP_IOPRIO / TMPFS_XATTR / TMPFS_POSIX_ACL: 原厂关闭, 我们之前开着。
-        #     DAMON 与 PAGE_IDLE_FLAG 不只是速度问题 —— 它们会改动 struct mm_struct 字段与
-        #     PG_* 页标志位编号, 而厂商模块用的是 Meizu 头文件里的偏移与常量, 存在 KMI 错位风险。
-        #     PAGE_IDLE_FLAG / DAMON_VADDR / DAMON_SYSFS 无需单列: 它们由 CONFIG_DAMON select,
-        #     关掉 DAMON 会一并回到原厂取值(隐藏符号直接写进 fragment 会校验失败)。
-        #   · ZRAM / ZSMALLOC: 原厂内核根本没有这两项。魅族的 swap 由厂商模块提供
-        #     (lsmod: smartswap_zram + smart_zsmalloc), 而 smart_zsmalloc 自己就 DEF 了全部
-        #     10 个 zs_* 符号(module_kmi_manifest.txt L36876-36885), 所以内核不需要 ZSMALLOC;
-        #     实测设备上 lsmod 里从没加载过 zram/zsmalloc, 我们这两项配置纯属空转差异。
         # CONFIG_DAMON is not set
         # CONFIG_BLK_CGROUP_IOPRIO is not set
-        # CONFIG_TMPFS_XATTR is not set
-        # CONFIG_TMPFS_POSIX_ACL is not set
         # CONFIG_ZRAM is not set
         # CONFIG_ZSMALLOC is not set
 
