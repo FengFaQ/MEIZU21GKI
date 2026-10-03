@@ -1,4 +1,4 @@
-name: 内核构建流程
+﻿name: 内核构建流程
 
 permissions:
   contents: write
@@ -1569,7 +1569,7 @@ jobs:
       #
       # 修复: 去掉 static 并补一条前置原型(CONFIG_WERROR=y 下 -Wmissing-prototypes 会报错),
       #       恢复成与原厂相同的形态 → 类型哈希重新生成, 且原型一致, 值应当就是 0xc3b4beac。
-      - name: 修复 shrink_slab 缺失 KCFI 类型哈希 (厂商模块间接调用它)
+      - name: 补 KCFI 类型哈希 (厂商模块经函数指针间接调用这些内核函数)
         working-directory: ${{ env.KERNEL_ROOT }}
         run: |
           set -e
@@ -1596,6 +1596,39 @@ jobs:
 
           echo "--- 修改后 ---"
           grep -n -A2 'shrink_slab(gfp_t gfp_mask' "$VS" | head -14
+
+          # ── 第二个同类函数: mem_cgroup_id_remove (mm/memcontrol.c) ──
+          # 2026-10-03 审计发现: 厂商模块 smartswap_zram 里有 mem_cgroup_id_remove /
+          # mem_cgroup_id_remove_hook 一对, 正是"挂 vendor hook 再回调原函数"的写法 ——
+          # 它用 mzprobe_lookup_function("mem_cgroup_id_remove") 按名字取地址, 再经函数指针
+          # 间接调用。实测我们内核该函数入口前 4 字节是 0xd65f03c0 (= ret, 即 clang 没生成类型
+          # 哈希, 因为它是 static 且从未被取过地址), 而原厂那个位置是正常哈希 ⇒ 这条路径一旦被
+          # 触发, 就是和 shrink_slab 完全相同的 CFI panic。修法相同。
+          MC="./common/mm/memcontrol.c"
+          [ -f "$MC" ] || { echo "::error::找不到 $MC"; exit 1; }
+
+          echo "--- mem_cgroup_id_remove 修改前 ---"
+          grep -n 'mem_cgroup_id_remove' "$MC" | head -6
+
+          if grep -qE '^static (void|int) mem_cgroup_id_remove\(' "$MC"; then
+            sed -i -E 's/^static (void|int) mem_cgroup_id_remove\(/\1 mem_cgroup_id_remove(/' "$MC"
+            echo "已去掉 mem_cgroup_id_remove 的 static"
+          fi
+          grep -qE '^(void|int) mem_cgroup_id_remove\(' "$MC" \
+            || { echo "::error::mem_cgroup_id_remove 非 static 化失败, 上游写法可能已变"; exit 1; }
+
+          PROTO2="$(grep -E '^(void|int) mem_cgroup_id_remove\(' "$MC" | head -1);"
+          if ! grep -qF "$PROTO2" "$MC"; then
+            LNO="$(grep -nE '^(void|int) mem_cgroup_id_remove\(' "$MC" | head -1 | cut -d: -f1)"
+            { head -n $((LNO - 1)) "$MC"; echo "$PROTO2"; tail -n +"$LNO" "$MC"; } > "$MC.new"
+            mv "$MC.new" "$MC"
+            echo "已在第 $LNO 行前补上前置原型"
+          fi
+          grep -qF "$PROTO2" "$MC" \
+            || { echo "::error::补 mem_cgroup_id_remove 前置原型失败"; exit 1; }
+
+          echo "--- mem_cgroup_id_remove 修改后 ---"
+          grep -n -B1 -A2 'mem_cgroup_id_remove(struct mem_cgroup' "$MC" | head -10
 
       - name: 配置内核名称
         working-directory: ${{ env.KERNEL_ROOT }}
@@ -1972,7 +2005,23 @@ jobs:
           echo "Image  =$IMG"
           if [ -n "$IMG" ] && [ -n "$VM" ] && [ -f "$GITHUB_WORKSPACE/tools/check_kcfi_typeid.py" ]; then
             python3 "$GITHUB_WORKSPACE/tools/check_kcfi_typeid.py" "$IMG" --nm "$VM" shrink_slab c3b4beac \
-              || { echo "::error title=shrink_slab 仍缺 KCFI 类型哈希::厂商模块 mz_kshrink_slabd 用 kallsyms 取到它的地址后间接调用, 调用点会校验 CFI。缺哈希 ⇒ 刷入后开机约 90 秒 CFI failure → panic。这一版不要刷。"; exit 1; }
+              || { echo "::error title=shrink_slab 仍缺 KCFI 类型哈希::厂商模块 mz_kshrink_slabd 用 mzprobe_lookup_function 取到它的地址后间接调用, 调用点会校验 CFI。缺哈希 ⇒ 刷入后开机约 90 秒 CFI failure → panic。这一版不要刷。"; exit 1; }
+
+            # mem_cgroup_id_remove: 期望值未知(厂商模块里写死的那个数要等我们拿到才知道), 所以
+            # 这里先断言"内核确实为它生成了类型哈希" —— 即入口前 4 字节不是 0xd65f03c0 (= ret,
+            # 上一个函数的结尾, 也就是完全没有哈希)。这是 2026-10-03 审计发现的第二颗同类雷,
+            # 消费者是 smartswap_zram (mem_cgroup_id_remove_hook 回调原函数)。
+            MCIR="$GITHUB_WORKSPACE/mem_cgroup_id_remove_typeid.txt"
+            python3 "$GITHUB_WORKSPACE/tools/check_kcfi_typeid.py" "$IMG" --nm "$VM" mem_cgroup_id_remove \
+              > "$MCIR" 2>&1 || true
+            cat "$MCIR"
+            if grep -q 'typeid (4B bef): 0xd65f03c0' "$MCIR"; then
+              echo "::error title=mem_cgroup_id_remove 仍无 KCFI 类型哈希::厂商模块 smartswap_zram 按名字取到它的地址后经函数指针间接调用(hook 回调原函数)。缺哈希 ⇒ 该路径一旦被触发就是 CFI panic。这一版不要刷。"
+              exit 1
+            fi
+            if ! grep -q 'prologue       : paciasp' "$MCIR"; then
+              echo "::warning title=mem_cgroup_id_remove 偏移可疑::入口不是 paciasp, 上面的哈希值可能取错位置"
+            fi
           else
             echo "::warning title=无法核对内联类型哈希::缺 Image / vmlinux / 工具"
           fi
