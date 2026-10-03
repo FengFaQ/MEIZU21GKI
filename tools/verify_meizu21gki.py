@@ -110,6 +110,14 @@ check("build.yml: SUSFS 仍保留联网克隆回退", "gitlab.com/simonpunk/susf
 check("build.yml: KSU/SUSFS 来源支持 SOURCE.txt",
       bblob.count("SOURCE.txt") >= 4)
 check("build.yml: 内置 hmbird_patch.c 优先", '"$GITHUB_WORKSPACE/hmbird_patch.c"' in bblob)
+# KCFI: CI 必须钉住从厂商模块实测出来的期望哈希表 —— 少一个就意味着某个间接调用点失去保护
+check("build.yml: KCFI 期望值表完整(6 个实测值)",
+      all(h in bblob for h in ("c3b4beac", "7180a14e", "0ec970ab",
+                               "1703dde1", "a540670c", "ea4a421a")))
+check("build.yml: KCFI 断言走实测表而不是仅查有无",
+      "for pair in" in bblob and 'sym="${pair%%:*}"' in bblob)
+check("tools/kcfi_expect.py: 可从厂商 .ko 提取间接调用的期望哈希",
+      os.path.isfile(os.path.join(R, "tools", "kcfi_expect.py")))
 
 # ---------- 4. 失败日志 → log/ ----------
 log_steps = [s for s in steps_of(b) if "log/" in str(s.get("name", ""))]
@@ -298,9 +306,9 @@ check("tools/bootcompare.py 存在(boot 镜像结构分析工具)", os.path.isfi
 #   实测 kfree 在 Image 里有内联哈希 0x9390bcfa 但 nm 里没有 __kcfi_typeid_kfree, 具名符号不可靠。
 check("tools/check_kcfi_typeid.py 存在(KCFI 内联哈希判据)",
       os.path.isfile(os.path.join(R, "tools", "check_kcfi_typeid.py")))
-check("build.yml: CI 用 Image 内联哈希断言 shrink_slab == 0xc3b4beac",
+check("build.yml: CI 用 Image 内联哈希逐项断言厂商模块的期望值",
       "check_kcfi_typeid.py" in bblob and "--nm" in bblob
-      and "shrink_slab c3b4beac" in bblob, "缺 CI 端 CFI 断言")
+      and "shrink_slab:c3b4beac" in bblob, "缺 CI 端 CFI 断言")
 check("build.yml: 不再把 nm 的 __kcfi_typeid_ 具名符号当判据",
       'grep -E \'__kcfi_typeid_(shrink_slab' not in bblob)
 check("build.yml: 版本串校验不匹配时硬失败(不产出坏包)",
