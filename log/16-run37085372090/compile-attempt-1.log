@@ -1,0 +1,171 @@
+编译尝试: 1
+开始时间: 2026-10-03T01:20:55Z
+当前 KSU 最新提交日期: 未知
+当前 SUSFS 最新提交日期: 2026-09-26 01:48:27 +0800
++ cd /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25
++ sed -i s/BUILD_SYSTEM_DLKM=1/BUILD_SYSTEM_DLKM=0/ ./common/build.config.gki.aarch64
++ sed -i '/MODULES_ORDER=android\/gki_aarch64_modules/d' ./common/build.config.gki.aarch64
++ sed -i /KMI_SYMBOL_LIST_STRICT_MODE/d ./common/build.config.gki.aarch64
++ '[' -f build/build.sh ']'
++ FRAG=common/arch/arm64/configs/ksu.fragment
++ grep '^>'
++ diff /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ sed 's/^> //; s/^[[:space:]]*//'
++ true
++ cp /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig.orig /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/arch/arm64/configs/gki_defconfig
++ echo '=== KSU Fragment 内容 ==='
+=== KSU Fragment 内容 ===
++ cat common/arch/arm64/configs/ksu.fragment
+CONFIG_TMPFS_XATTR=y
+CONFIG_TMPFS_POSIX_ACL=y
+CONFIG_KSU=y
+# CONFIG_TRIM_UNUSED_KSYMS is not set
+# CONFIG_PANIC_ON_OOPS is not set
+# 允许 adb shell dmesg 读取内核日志(否则 user 版构建下 shell 无权读, 排障只能靠抢 512K
+# 环形缓冲区的开机瞬间 —— 本次黑屏问题正是靠这个手段才定位到 msm_kgsl 的符号 CRC 失配)。
+# 只影响权限位, 不涉及任何导出符号/KMI。
+# CONFIG_SECURITY_DMESG_RESTRICT is not set
+CONFIG_PANIC_TIMEOUT=30
+# CONFIG_DAMON is not set
+# CONFIG_BLK_CGROUP_IOPRIO is not set
+# CONFIG_ZRAM is not set
+# CONFIG_ZSMALLOC is not set
+
+CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SUS_PATH=y
+CONFIG_KSU_SUSFS_SUS_MOUNT=y
+CONFIG_KSU_SUSFS_SUS_KSTAT=y
+CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+# ★ 2026-10-03: 关闭 SUSFS 调试日志。ENABLE_LOG 会为每次钩子调用做日志输出,
+#   开机期要读几万个文件, 这些逐次调用累积起来是实打实的启动开销。
+#   功能不受影响 —— 它只是日志开关。
+# CONFIG_KSU_SUSFS_ENABLE_LOG is not set
+CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+CONFIG_KSU_SUSFS_SUS_MAP=y
++ echo =========================
+=========================
++ FRAG_FLAG=
++ '[' -s common/arch/arm64/configs/ksu.fragment ']'
++ FRAG_FLAG=--defconfig_fragment=//common:arch/arm64/configs/ksu.fragment
++ '[' none = auto ']'
++ LTO_FLAG=--lto=none
++ echo LTO_FLAG=--lto=none
+LTO_FLAG=--lto=none
++ tools/bazel build --disk_cache=/home/runner/.cache/bazel --config=fast --lto=none --defconfig_fragment=//common:arch/arm64/configs/ksu.fragment //common:kernel_aarch64_dist
+Extracting Bazel installation...
+Starting local Bazel server and connecting to it...
+INFO: Invocation ID: 676f140b-e8f2-4eb5-9948-098009720e28
+Loading: 
+Loading: 
+Loading: 1 packages loaded
+Loading: 1 packages loaded
+    currently loading: common
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded)
+Analyzing: target //common:kernel_aarch64_dist (2 packages loaded, 0 targets configured)
+Analyzing: target //common:kernel_aarch64_dist (56 packages loaded, 54437 targets configured)
+INFO: Analyzed target //common:kernel_aarch64_dist (56 packages loaded, 93595 targets configured).
+ checking cached actions
+INFO: Found 1 target...
+[0 / 7] [Prepa] Creating source manifest for //common:kernel_aarch64_dist ... (3 actions, 0 running)
+[37 / 396] [Prepa] Writing file common/kernel_aarch64_all_module_names/kernel_aarch64_modules
+[56 / 413] [Prepa] action 'SolibSymlink _solib_x86_64/_U_S_Sprebuilts_Skernel-build-tools_Clinux_Ux86_Uimported_Ulibs_Ulinux-x86_Slib64_Slibz-host.so___Uprebuilts_Skernel-build-tools_Slinux-x86_Slib64/libz-host.so'
+[216 / 423] [Prepa] Creating symlinks to in-tree tools @//build/kernel:hermetic-tools/cxx_extractor ... (2 actions, 0 running)
+[404 / 423] Executing genrule //build/kernel:gki_certification_tools; Downloading build/kernel/gki_certification_tools.tar.gz, 7.5 MiB / 15.6 MiB; 0s remote-cache ... (2 actions, 0 running)
+[407 / 423] Creating abi_symbollist and report @//common:kernel_aarch64_kmi_symbol_list; 1s remote-cache, processwrapper-sandbox ... (2 actions running)
+[409 / 423] [Prepa] Creating abi_symbollist.raw @//common:kernel_aarch64_raw_kmi_symbol_list
+[411 / 423] Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config; 0s local
+INFO: From Creating kernel config (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_config:
+.config:7458:warning: override: KSU_SUSFS changes choice state
+[412 / 423] [Prepa] Building UAPI kernel headers kernel_aarch64_uapi_headers
+[412 / 423] Preparing for module build (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_modules_prepare; 1s local ... (3 actions running)
+[412 / 423] Preparing for module build (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_modules_prepare; 11s local ... (3 actions running)
+[413 / 423] Preparing for module build (ksu.fragment;lto=none;trim) @//common:kernel_aarch64_modules_prepare; 29s local ... (2 actions running)
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 31s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 42s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 72s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 132s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 192s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 252s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 312s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 372s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 432s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 492s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 552s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 612s local
+[414 / 423] Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64; 672s local
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22: Building kernel (ksu.fragment;lto=none;trim) @//common:kernel_aarch64 failed: (Exit 1): bash failed: error executing KernelBuild command (from target //common:kernel_aarch64) /bin/bash -c ... (remaining 1 argument skipped)
+ERROR: Unable to find drivers/block/zram/zram.ko in any of the following directories:
+  bazel-out/k8-fastbuild/bin/common/kernel_aarch64/staging/lib/modules/6.1.25-android14-11-maybe-dirty/kernel
+Unable to find mm/zsmalloc.ko in any of the following directories:
+  bazel-out/k8-fastbuild/bin/common/kernel_aarch64/staging/lib/modules/6.1.25-android14-11-maybe-dirty/kernel
+-- ReSukiSU version code: 30701
+-- ReSukiSU version name: v4.1.0-dd34d71b@ReSukiSU
+-- Supported Unofficial Manager: MKSU, RKSU, KOWSU, SukiSU-Ultra, ReSukiSU 
+-- KERNEL_VERSION: 6.1
+-- KERNEL_TYPE: GKI 2.0
+-- ReSukiSU: using SuSFS Inline hook
+-- You are using SUSFS, if you face any issues, please MAKE SURE you are using LATEST SUSFS KERNEL SIDE before submit issue to ReSukiSU.
+-- We keep tracking simonpunk's latest changes, and don't maintain ANY backward compatibility for old version of susfs.
+-- ReSukiSU/susfs_inline: ksu_handle_setresuid found
+-- ReSukiSU/susfs_inline: ksu_handle_execveat found
+-- ReSukiSU/susfs_inline: ksu_handle_faccessat found
+-- ReSukiSU/susfs_inline: ksu_handle_sys_read found
+-- ReSukiSU/susfs_inline: ksu_handle_stat found
+-- ReSukiSU/susfs_inline: ksu_handle_sys_reboot found
+-- ReSukiSU/susfs_inline: ksu_handle_input_handle_event found
+-- ReSukiSU/susfs_feature_check: selinux_hide manual hook found
+
+-- SUSFS_VERSION: v2.3.0
+-- ReSukiSU/compat: current_sid found
+-- ReSukiSU/compat: selinux_state found
+-- ReSukiSU/compat: strncpy found
+-- ReSukiSU/compat: kernel_read found
+-- ReSukiSU/compat: kernel_write found
+-- ReSukiSU/compat: selinux_inode found
+-- ReSukiSU/compat: selinux_cred found
+-- ReSukiSU/compat: seccomp_filter_count found
+-- ReSukiSU/compat: put_seccomp_filter found
+-- ReSukiSU/compat: security_inode_init_security_anon found
+-- ReSukiSU/compat: anon_inode_getfd_secure found
+-- ReSukiSU/compat: file_inode() found
+-- ReSukiSU/compat: __flush_dcache_area not found
+-- ReSukiSU/compat: policy_mutex found
+-- ReSukiSU/compat: ns_get_path found
+-- ReSukiSU/compat: modern dentry_open found
+-- ReSukiSU/compat: ext4_unregister_sysfs found
+-- ReSukiSU/compat: f_op->read_iter found
+-- ReSukiSU/compat: iterate_dir found
+-- ReSukiSU/compat: modern static_key_interface found
+-- ReSukiSU/compat: d_inode found
+-- ReSukiSU/compat: inode_lock found
+-- ReSukiSU/compat: modern errno file found
+-- ReSukiSU/compat: minmax.h found
+-- ReSukiSU/compat: overflow.h found
+-- ReSukiSU/compat: modern proc ns header file found
+-- ReSukiSU/compat: android spec POLICYDB_CONFIG_ANDROID_NETLINK_ROUTE found!!
+-- ReSukiSU/compat: android spec POLICYDB_CONFIG_ANDROID_NETLINK_GETNEIGH found!!
+-- ReSukiSU/compat: found modern selinux policydb
+-- ReSukiSU/compat: found sidtab as reference
+-- ReSukiSU/compat: found hlist in security_hook_list
+-- ReSukiSU/compat: found required provide lsm name
+-- ReSukiSU/compat: found selinux status variables in selinux_state
+-- ReSukiSU/compat: found selinux_policy struct
+-- ReSukiSU/compat: found hashtabs is a struct instead of pointer
+-- ReSukiSU/compat: found symtab_search function
+-- ReSukiSU/compat: found hashtab_key_params function
+-- ReSukiSU/compat: found filename_trans_key function
+-- ReSukiSU/compat: found security_add_hooks
+-- ReSukiSU/compat: ksu_handle_post_execve hook not found
+-- ReSukiSU/compat: key need perm as enum found
+-- ReSukiSU/compat: modern dentry_open found
+Target //common:kernel_aarch64_dist failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+ERROR: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/common/BUILD.bazel:126:22 Middleman _middlemen/common_Skernel_Uaarch64_Udist-runfiles failed: (Exit 1): bash failed: error executing KernelBuild command (from target //common:kernel_aarch64) /bin/bash -c ... (remaining 1 argument skipped)
+INFO: Elapsed time: 718.533s, Critical Path: 694.68s
+INFO: 415 processes: 11 disk cache hit, 396 internal, 3 local, 5 processwrapper-sandbox.
+ERROR: Build did NOT complete successfully
++ exit 1
+结束时间: 2026-10-03T01:32:53Z
+退出码: 1
