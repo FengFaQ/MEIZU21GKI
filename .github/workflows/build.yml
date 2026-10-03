@@ -2142,8 +2142,22 @@ jobs:
           ANDROID_MAJOR=$(echo "${{ inputs.android_version }}" | tr -dc '0-9')
           OS_VERSION="${ANDROID_MAJOR}.0.0"
           OS_PATCH="${{ inputs.os_patch_level }}"
-          PART_SIZE=$((64 * 1024 * 1024))
+          # ★ 2026-10-03: 分区大小必须与原厂 boot.img 完全一致 = 100663296 字节 (96 MiB)。
+          #   实测原厂 12.6 线刷包 boot.img 正好 100663296 字节(= boot 分区大小, 无余数),
+          #   而我们之前填的是 64 MiB, 短了 32 MiB, 后果有两层:
+          #     · fastboot 只写"镜像文件长度"这么多字节, 分区尾部那 32 MiB 会保留上一次刷入的
+          #       数据 —— 其中就包括原厂镜像放在"分区末尾-64"处的 AVB footer
+          #       (实测 "AVBf" @0x5ffffc0 = 100663232), 也就是分区尾部仍留着一份描述
+          #       【原厂镜像】的 AVB 元数据(original_image_size / 哈希都是原厂的)。
+          #     · 补零到分区大小之后, fastboot 会把整个 96 MiB 分区重写一遍, 旧 footer 被抹掉。
+          #   原厂 boot.img 结构(用 tools/bootcompare.py 实测):
+          #     header_version=4  header_size=1584  page_size=4096
+          #     kernel_size=33892864(32.323 MiB)  ramdisk_size=0  signature_size=0
+          #     os_version=0x1c00017a  cmdline=''  内核 @0x1000  载荷结束 @0x2054000
+          #   我们这边除了总大小, 其余字段本来就完全一致, 所以只改大小 + 加自检。
+          PART_SIZE=$((96 * 1024 * 1024))
           echo "mkbootimg os_version=${OS_VERSION} os_patch_level=${OS_PATCH} boot_sign=${{ inputs.boot_sign }}"
+          echo "PART_SIZE=$PART_SIZE (原厂 boot.img 实测大小)"
 
           OUT="boot.img"
           # ★ 2026-10-03: 这里曾经传 module_blacklist=mz_kshrink_slabd, 但实测【完全无效】:
@@ -2157,16 +2171,61 @@ jobs:
             --cmdline "$CMDLINE" \
             --os_version "$OS_VERSION" --os_patch_level "$OS_PATCH"
           echo "boot.img cmdline: $CMDLINE"
+          SIGNED=0
           if [ "${{ inputs.boot_sign }}" = "不签名" ]; then
-            # 与参考镜像同结构: 不加 AVB, 只把镜像零填充到分区大小
-            # (避免分区尾部残留上一次刷入的旧 AVB footer)
+            # 与原厂同结构: 原厂 boot.img 也带 AVB footer, 但我们不签名 —— 关键是把整个分区
+            # 零填充到原厂大小, 这样 fastboot 会重写整个分区, 不会残留旧数据/旧 AVB footer。
             truncate -s "$PART_SIZE" "$OUT"
             echo "$OUT: 未签名, 已零填充到 $((PART_SIZE / 1024 / 1024)) MiB"
           else
             $AVBTOOL add_hash_footer --partition_name boot --partition_size "$PART_SIZE" \
               --image "$OUT" --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
             echo "$OUT: 已加 AVB hash footer"
+            SIGNED=1
           fi
+
+          # 结构自检: 与原厂 boot.img 逐字段核对, 不一致直接让这一步失败(而不是刷进去才发现)
+          python3 - "$OUT" "$SIGNED" <<'PY'
+          import struct
+          import sys
+
+          path, signed = sys.argv[1], int(sys.argv[2])
+          data = open(path, 'rb').read()
+          bad = []
+
+          def chk(label, got, want):
+              good = got == want
+              if not good:
+                  bad.append('%s: got %r want %r' % (label, got, want))
+              print('  %-16s %-24r %s' % (label, got, 'OK' if good else 'MISMATCH'))
+
+          def u32(off):
+              return struct.unpack_from('<I', data, off)[0]
+
+          chk('size', len(data), 100663296)          # 原厂 = boot 分区大小 = 96 MiB
+          chk('magic', data[:8], b'ANDROID!')
+          chk('header_version', u32(40), 4)
+          chk('header_size', u32(20), 1584)
+          chk('ramdisk_size', u32(12), 0)
+          chk('os_version', hex(u32(16)), '0x1c00017a')
+          chk('cmdline', data[44:44 + 1536].split(b'\x00')[0], b'')
+          chk('payload fits', u32(8) < len(data), True)
+          ks = u32(8)
+          print('  kernel_size      %d (%.3f MiB)' % (ks, ks / 1048576.0))
+          tail_off = 4096 + ((ks + 4095) // 4096) * 4096 + ((u32(12) + 4095) // 4096) * 4096
+          tail = data[tail_off:len(data) - (0 if not signed else 0)]
+          print('  tail zero-filled %s' % (tail.count(0) == len(tail)))
+          if signed:
+              print('  signature_size   %d (已签名)' % u32(1580))
+          else:
+              chk('signature_size', u32(1580), 0)
+          if bad:
+              print('BOOT IMG CHECK FAILED:')
+              for b in bad:
+                  print('  - ' + b)
+              sys.exit(1)
+          print('BOOT IMG CHECK PASSED (与原厂 boot.img 结构一致)')
+          PY
           cp "./$OUT" "../${{ inputs.android_version }}-${{ inputs.kernel_version }}.${{ inputs.sub_level }}-${{ inputs.os_patch_level }}-$OUT"
           echo "已跳过 boot-gz.img / boot-lz4.img(与原厂同格式, 冗余)"
 

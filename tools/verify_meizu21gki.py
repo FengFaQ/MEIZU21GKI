@@ -258,6 +258,18 @@ check("build.yml: Android13+ 分支 os_version 由 android_version 推导",
       'ANDROID_MAJOR=$(echo "${{ inputs.android_version }}" | tr -dc \'0-9\')' in bblob)
 check("build.yml: 不签名时零填充到分区大小(清掉分区尾部旧 AVB footer)",
       'truncate -s "$PART_SIZE" "$OUT"' in bblob)
+# ★ 2026-10-03: 原厂 boot.img 正好 100663296 字节(= boot 分区大小 = 96 MiB)。
+#   之前填 64 MiB, 短了 32 MiB -> fastboot 只写 64 MiB, 分区尾部 32 MiB 保留上一次刷入的数据,
+#   连原厂放在"分区末尾-64"处的 AVB footer("AVBf" @0x5ffffc0)都还在。
+check("build.yml: PART_SIZE == 原厂 boot.img 大小 96 MiB (100663296)",
+      "PART_SIZE=$((96 * 1024 * 1024))" in bblob,
+      "need PART_SIZE=$((96 * 1024 * 1024))")
+check("build.yml: PART_SIZE 不再用旧的 64 MiB", "PART_SIZE=$((64 * 1024 * 1024))" not in bblob)
+check("build.yml: boot.img 结构自检(大小/头部/无 cmdline)存在",
+      "BOOT IMG CHECK PASSED" in bblob and "100663296" in bblob)
+check("build.yml: boot.img cmdline 为空(原厂也是空; cmdline 会进 bootconfig 而非此处)",
+      'CMDLINE=""' in bblob)
+check("tools/bootcompare.py 存在(boot 镜像结构分析工具)", os.path.isfile(os.path.join(R, "tools", "bootcompare.py")))
 check("build.yml: 版本串校验不匹配时硬失败(不产出坏包)",
       "内核版本串不匹配" in bblob and bblob.count("exit 1") >= 1)
 check("build.yml: 打印 vermagic 便于核对", "SMP preempt mod_unload modversions aarch64" in bblob)
