@@ -1,4 +1,4 @@
-镜像基址(vmlinux 最低已分配段) = 0xffffffc008000000;  Image=34822656 字节, vmlinux=343885784 字节
+镜像基址(vmlinux 最低已分配段) = 0xffffffc008000000;  Image=34822656 字节, vmlinux=343885304 字节
 映射自校验 __ksymtab_strings(333524 字节): 一致
 Module.symvers 导出 15037 个; 清单 NEED 4891 个
 对应关系校验: 共 14682 项, 与 Module.symvers 一致 14682, 不一致 0, 未知 0

@@ -1,9 +1,9 @@
-# 构建报告 run 21
+# 构建报告 run 23
 
-- 时间(UTC): 2026-10-03T03:30:26Z
+- 时间(UTC): 2026-10-03T05:02:59Z
 - 结果: success
-- 提交: 7e88f53ba14e4fa6fc3003a964997c4a8da79c6d
-- 运行页面: https://github.com/FengFaQ/MEIZU21GKI/actions/runs/37091938636
+- 提交: cd9372acdc81c3e76693ac4157cce8bad1127255
+- 运行页面: https://github.com/FengFaQ/MEIZU21GKI/actions/runs/37096230203
 - GKI: android14-6.1.25-2023-10
 - 变体/模式: ReSukiSU / 关闭 (SUSFS=true)
 - LTO: none
@@ -14,7 +14,6 @@
 - README.md
 - cfi_typeids.txt
 - config_vs_stock.txt
-- mem_cgroup_id_remove_typeid.txt
 - module_compat.txt
 - patch-rejects
 - patch_crc_report.txt
