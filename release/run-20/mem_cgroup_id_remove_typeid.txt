@@ -1,0 +1,5 @@
+image          : /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/bazel-bin/common/kernel_aarch64/Image
+offset         : 0x36d864
+typeid (4B bef): 0x7180a14e
+first insns    : d503233f a9be7bfd a9014ff4 910003fd
+prologue       : paciasp  <- looks like a real function entry
