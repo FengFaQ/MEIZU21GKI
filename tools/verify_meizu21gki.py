@@ -172,6 +172,14 @@ for _st in steps_of(b):
 _conflict = sorted(s for s, v in _syms.items() if v == "n" and s in _forced)
 check("meizu21.yml: extra_config 关掉的符号不与 build.yml 强制打开的冲突",
       not _conflict, "conflict=%s" % _conflict)
+# ⑤ 关掉 CONFIG_ZRAM / CONFIG_ZSMALLOC 时, 必须同步删掉 GKI 模块清单 common/modules.bzl 里的
+#    条目, 否则 kleaf 打包阶段报 "Unable to find drivers/block/zram/zram.ko ..." 而编译失败
+#    (实测 run 16)。这两件事必须成对出现。
+_zram_off = sorted(s for s, v in _syms.items()
+                   if v == "n" and s in ("CONFIG_ZRAM", "CONFIG_ZSMALLOC"))
+check("build.yml: 关掉 ZRAM/ZSMALLOC 时必须同步清理 common/modules.bzl 条目",
+      not _zram_off or ("common/modules.bzl" in bblob and "zsmalloc\\.ko" in bblob),
+      "关掉了 %s, 但找不到 modules.bzl 清理语句" % _zram_off)
 push = m[True]["push"]
 check("meizu21.yml: 触发路径不含 log/**",
       not any(str(p).startswith("log") for p in push["paths"]), str(push["paths"]))

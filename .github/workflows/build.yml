@@ -1465,6 +1465,24 @@ jobs:
           CONFIG_TMPFS_POSIX_ACL=y
           EOF
 
+          # ★ 2026-10-03: 关掉 CONFIG_ZRAM / CONFIG_ZSMALLOC 时, 必须同步删掉 GKI 模块清单里的
+          #   对应条目, 否则 kleaf 打包阶段会失败(实测 run 16):
+          #     ERROR: Unable to find drivers/block/zram/zram.ko in any of the following directories:
+          #       bazel-out/k8-fastbuild/bin/common/kernel_aarch64/staging/lib/modules/6.1.25-.../kernel
+          #     Unable to find mm/zsmalloc.ko in any of the following directories: ...
+          #   因为 meizu21.yml 的 extra_config 里把这两项恢复成了原厂值(# ... is not set),
+          #   内核不再产出这两个 .ko。做法与下面 use_zram 分支里的删除语句一致。
+          #   (原厂内核同样没有 zram/zsmalloc: 魅族 swap 由厂商模块 smartswap_zram +
+          #    smart_zsmalloc 提供, 而 smart_zsmalloc 自己 DEF 了全部 10 个 zs_* 符号。)
+          if [ -f common/modules.bzl ]; then
+            # sed 幂等: 匹配不到就什么都不做, 避免因为清单写法变化而漏删进而编译失败
+            sed -i 's/"drivers\/block\/zram\/zram\.ko",//g; s/"mm\/zsmalloc\.ko",//g' common/modules.bzl
+            echo "已清理 common/modules.bzl 的 zram/zsmalloc 条目"
+            grep -nE 'zram|zsmalloc' common/modules.bzl || echo "  (modules.bzl 里已无 zram/zsmalloc)"
+          else
+            echo "::warning::common/modules.bzl 不存在, 跳过 zram/zsmalloc 清单清理"
+          fi
+
           # 禁用KSU 时源码里没有 KernelSU，CONFIG_KSU 不存在，写入会被 bazel 的 defconfig 检查拒绝
           if [ "${{ inputs.ksu_mode }}" != "禁用KSU" ]; then
             echo "CONFIG_KSU=y" >> "$DEFCONFIG"
