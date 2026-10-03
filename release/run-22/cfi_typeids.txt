@@ -1259,7 +1259,6 @@
 00000000de8d38d6 W __kcfi_typeid_kill_anon_super
 00000000de8d38d6 W __kcfi_typeid_kill_block_super
 00000000de8d38d6 W __kcfi_typeid_kill_litter_super
-00000000993e738c W __kcfi_typeid_ksu_handle_post_execve
 00000000993e738c W __kcfi_typeid_ksu_handle_rename
 00000000bcf98444 W __kcfi_typeid_ksu_init_symbol_resolver
 00000000993e738c W __kcfi_typeid_ksu_is_safe_mode
