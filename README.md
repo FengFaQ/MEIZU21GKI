@@ -164,3 +164,17 @@ robocopy tmp-susfs susfs4ksu /E /XD .git   # 覆盖后同步修改 susfs4ksu/SOU
 （内核按管理器 APK 的 v2 签名证书哈希识别）。
 
 作者自担风险；救砖靠 9008 全分区备份。
+
+---
+
+## 许可证
+
+本项目自身代码（工作流、构建脚本、工具、文档）采用 **GPL-2.0-only**，与它所构建的 Linux 内核一致。
+完整条款见仓库根目录的 [`LICENSE`](LICENSE)。
+
+构建产物 `boot.img` / `AnyKernel3.zip` 同样是 **GPL-2.0-only** —— 由 Linux 6.1（GPL-2.0-only）
++ KernelSU kernel 部分（GPL-2.0-only）+ SUSFS 内核补丁组成。
+
+仓库内另含若干第三方组件，各自保留其原有许可证：`kernelsu/` 的 userspace 部分与 `susfs4ksu/`
+为 GPL-3.0，`zram/lz4/` 为 BSD-2-Clause。**逐目录的完整清单、固定版本号与发布注意事项
+见 [`CREDITS.md`](CREDITS.md)。**

@@ -4,5 +4,7 @@ repo=https://gitlab.com/simonpunk/susfs4ksu
 branch=gki-android14-6.1
 commit=24743360ea08d98f6ad72b856851abed8de5854f
 date=2026-09-26 01:48:27 +0800
-license=GPL-2.0 (见本目录 LICENSE)
+license=GPL-3.0 (本目录 LICENSE 实测为 GPL-3.0, 原文误标 GPL-2.0, 2026-10-03 修正)
+license.kernel_patches=上游未附单独授权声明。已核对上游 50_add_susfs_in_gki-android14-6.1.patch 原文: 整份补丁不含任何许可声明, 是作用于 GPL-2.0 内核的纯 diff。
+license.note=本项目按"内核补丁随 GPL-2.0 内核一同分发"的通行做法使用, 产物内核仍为 GPL-2.0-only。若需绝对稳妥, 用 CI 的 export_susfs_patches 只导出补丁, 或用 ksu_mode=禁用SUSFS 构建纯 GPL-2.0 内核。详见 CREDITS.md 第五节。
 note=只用到 kernel_patches/ (fs/ include/ KernelSU/ 50_add_susfs_in_gki-android14-6.1.patch) 与 ksu_susfs 工具
