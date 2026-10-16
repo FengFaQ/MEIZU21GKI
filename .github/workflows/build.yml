@@ -775,6 +775,49 @@ jobs:
           fi
           echo "KSU_LATEST_COMMIT_DATE=${KSU_LATEST_COMMIT_DATE:-未知}" >> $GITHUB_ENV
 
+      # ★ 触控相关修复(未验证): 让 SUSFS 输入钩子尽早退休 + 去掉自旋锁内的 pr_info
+      #
+      # 背景: 对比我们构建的 Image 与原厂 Image, 内核态落在【输入热路径】上的差异
+      # 只有一处 —— drivers/input/input.c 里 SUSFS 插的钩子:
+      #     if (static_branch_unlikely(&ksu_is_input_hook_enabled))
+      #         ksu_handle_input_handle_event(&type, &code, &value);
+      # 实测: ksu_handle_input_handle_event / ksu_stop_input_hook_runtime
+      #       我们=有, 原厂=无。所以它被单独拿出来审。
+      #
+      # 已核实: 该钩子【只读】*type/*code/*value, 从不写回; 只在
+      #   EV_KEY + KEY_VOLUMEDOWN 时给"连按3次音量下进安全模式"计数。它
+      #   【不改变】触摸语义 —— 不要在 issue 里再把它当嫌疑。
+      #
+      # 但有两个真实缺陷, 本步骤修掉:
+      #   1) 钩子在自旋锁(原子上下文)里调用 pr_info() —— 每按一次音量下都会在
+      #      持锁状态走 console/logbuf 加锁路径;
+      #   2) 钩子默认 DEFINE_STATIC_KEY_TRUE(开着), 退休只依赖 on_post_fs_data()
+      #      这一个入口; 本步骤让 ksu_is_safe_mode() 也退休(用户态更早就会问),
+      #      并把阈值达到后的"待退休"状态做成标志, 由非原子入口消费
+      #      (不能在原子上下文调 static_branch_disable, 见 ReSukiSU #363)。
+      #
+      # ⚠️ 定位: 这是"消除内核在输入路径上的唯一差异 + 修两个真实缺陷",
+      #   属于降低变量, **不是已验证的修复**。现有最强线索指向 vendor 侧
+      #   (Flyme 游戏模式写 game_mode_node → 驱动烧边缘配置), 而触摸驱动
+      #   goodix_ts.ko 不由本仓库编译。详见 docs/ 下的诊断报告。
+      - name: 触控相关修复 (SUSFS 输入钩子早退 + 去原子上下文日志)
+        if: inputs.ksu_mode != '禁用KSU'
+        run: |
+          set -e
+          KSU_DIR="${KSU_SRC_DIR:-$KERNEL_ROOT/KernelSU}"
+          echo "KSU_DIR=$KSU_DIR"
+          if [ ! -d "$KSU_DIR" ]; then
+            echo "::warning title=跳过触控修复::找不到 KSU 源码目录 $KSU_DIR"
+            exit 0
+          fi
+          FIX="$GITHUB_WORKSPACE/scripts/ksu_fixes/10_ksu_input_hook_early_retire.sh"
+          if [ ! -f "$FIX" ]; then
+            echo "::error title=触控修复脚本缺失::$FIX 不存在"
+            exit 1
+          fi
+          chmod +x "$FIX"
+          bash "$FIX" "$KSU_DIR"
+
       - name: 配置 SukiSU 管理器信息
         if: (inputs.ksu_variant == 'SukiSU' || inputs.ksu_variant == 'SukiSU(40726)' || inputs.ksu_variant == 'SukiSU(40548)') && inputs.ksu_mode != '禁用KSU'
         working-directory: ${{ env.KERNEL_ROOT }}/KernelSU
