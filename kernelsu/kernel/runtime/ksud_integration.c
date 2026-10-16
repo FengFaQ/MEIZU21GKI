@@ -339,6 +339,9 @@ void ksu_handle_execveat_ksud(const char *filename, struct user_arg_ptr *argv, s
         if (check_argv(*argv, 1, "-Xzygote", buf, sizeof(buf))) {
             pr_info("exec zygote, /data prepared, second_stage: %d\n", init_second_stage_executed);
             on_post_fs_data();
+            // on_post_fs_data() already retires the input hook; clear the flag
+            // so a later volume-down burst cannot re-arm anything.
+            input_hook_retire_pending = false;
             first_zygote = false;
             ksu_stop_ksud_execve_hook();
         }
@@ -781,6 +784,10 @@ int ksu_handle_sys_read(unsigned int fd, char __user **buf_ptr, size_t *count_pt
 
 static unsigned int volumedown_pressed_count = 0;
 
+// Set from atomic (input spinlock) context once the volume-down threshold is
+// reached; consumed by non-atomic callers that are allowed to sleep.
+static bool input_hook_retire_pending = false;
+
 static bool is_volumedown_enough(unsigned int count)
 {
     return count >= 3;
@@ -796,16 +803,22 @@ int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *v
 
     if (*type == EV_KEY && *code == KEY_VOLUMEDOWN) {
         int val = *value;
-        pr_info("KEY_VOLUMEDOWN val: %d\n", val);
+        // NOTE: this runs inside the input device spinlock (atomic context).
+        // pr_info() here would take the console/logbuf locks on every single
+        // volume-down event, so it is deliberately not used. Count only.
         if (val) {
             // key pressed, count it
             volumedown_pressed_count += 1;
-            // don't stop hook, or sleep in atomic context
-            // keep for on_post_fs_data do that
-            // check https://github.com/ReSukiSU/ReSukiSU/issues/363
-            // if (is_volumedown_enough(volumedown_pressed_count)) {
-            //     ksu_stop_input_hook_runtime();
-            // }
+            // Once the threshold is reached the hook has done its job: the
+            // safe-mode decision only reads volumedown_pressed_count later, so
+            // we can retire the hook now. Do NOT call ksu_stop_input_hook_runtime()
+            // here -- static_branch_disable() may sleep and we are in atomic
+            // context (see ReSukiSU issue #363). Flag it and let the existing
+            // post-fs-data path disable it; if that path is skipped the flag
+            // makes every later event a single predictable branch.
+            if (is_volumedown_enough(volumedown_pressed_count)) {
+                input_hook_retire_pending = true;
+            }
         }
     }
 
@@ -936,7 +949,11 @@ bool ksu_is_safe_mode()
         return false;
     }
 
-    // stop hook first!
+    // Userspace asked about safe mode, which means boot has progressed far
+    // enough that the volume-down counter can no longer grow in a way that
+    // matters. Retire the input hook now instead of waiting for post-fs-data;
+    // this keeps the input_handle_event() call site a single predictable
+    // branch for the rest of uptime.
     ksu_stop_input_hook_runtime();
 
     pr_info("volumedown_pressed_count: %d\n", volumedown_pressed_count);
@@ -1068,6 +1085,7 @@ void ksu_stop_input_hook_runtime(void)
         return;
     }
     input_hook_stopped = true;
+    input_hook_retire_pending = false;
     stop_input_hook();
 }
 
