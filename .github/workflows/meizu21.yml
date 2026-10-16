@@ -27,9 +27,19 @@ on:
       # ★ 2026-10-03: 移除 'kernelsu/**' —— ReSukiSU 已改为每次编译从 GitHub 现场拉取,
       #   仓库内置的 kernelsu/ 不再参与构建, 改它自然也不该触发构建。
       - 'susfs4ksu/**'     # 内置 SUSFS 补丁快照
-      - 'tools/**'         # KMI 兼容层/CRC 对齐等工具
+      # tools/ 只有这几个真正被 build.yml 调用 (KMI 兼容层 / CRC 对齐 / CI 自检)。
+      # 收窄成逐文件列举, 是为了让 docs 与纯本地工具 (如 publish_release.ps1) 的改动
+      # 不再触发一次 30 分钟的编译。
+      - 'tools/patch_kcrctab.py'
+      - 'tools/check_kcfi_typeid.py'
+      - 'tools/apply_kmi_shim.py'
+      - 'tools/verify_meizu21gki.py'
+      - 'tools/check_workflow_shell.py'
+      - 'tools/override_manifest_common.py'
+      - 'tools/check_module_kmi.py'
       - 'device/**'        # 设备模块 KMI 清单、原厂参考 config
       # 注意: 不含 'log/**' 与 'release/**' —— 失败日志/构建报告归档的提交不会再次触发构建
+      #       也不含 'docs/**' —— 纯文档改动不该触发编译
   workflow_dispatch:
     inputs:
       ksu_variant:
