@@ -737,16 +737,37 @@ jobs:
               #
               # 需要钉住版本时(例如上游某次改动导致编不过), 不用改代码 ——
               # 到仓库 Settings → Variables 设 KSU_REPO / KSU_REF 即可, 例如 KSU_REF=v4.1.0。
+              #
+              # ★ 2026-10-16: 默认值由 `main` 改为固定提交 —— 见文件末尾「SUSFS 构建闸门」说明。
+              #   上游 48fa4bb7 (2026-10-10 "kernel: suspend susfs build") 在
+              #   kernel/tools/susfs_compat.mk 里加了一句**无条件**的
+              #       $(error Please wait susfs update.)
+              #   只要它有 SUSFS 内联钩子就必然触发的硬闸门。也就是说:
+              #   **任何人拿 post-48fa4bb7 的 ReSukiSU main + SUSFS 都编不过**,
+              #   与本仓库的改动无关 (run 24 就是撞上这个)。
+              #   在 simonpunk 把 SUSFS 同步到新版 KernelSU 之前, 只能钉到闸门之前的提交。
+              #   实测可用的最后一个提交: 5b76b884 (2026-10-09, 闸门之前)。
+              #   想恢复"跟 main 走"时, 把下面这行改回 main 即可 (或在 Variables 里设 KSU_REF)。
               KSU_REPO="${KSU_REPO:-https://github.com/ReSukiSU/ReSukiSU}"
-              KSU_REF="${KSU_REF:-main}"
+              KSU_REF="${KSU_REF:-5b76b884}"
+
               echo "ReSukiSU 来源: $KSU_REPO  (ref=$KSU_REF)"
 
+              # clone 带完整历史: KSU_REF 可能是 branch / tag / commit hash,
+              # --depth 1 会让按 commit 检出失败。
               git clone "$KSU_REPO" KernelSU
               git -C KernelSU checkout "$KSU_REF"
 
               echo "KSU 提交: $(git -C KernelSU rev-parse HEAD)"
               echo "KSU 描述: $(git -C KernelSU describe --tags --always 2>/dev/null || echo '(无 tag)')"
               echo "KSU 日期: $(git -C KernelSU log -1 --date=format:'%Y-%m-%d %H:%M:%S %z' --format='%cd')"
+
+              # ★ SUSFS 构建闸门预检: 把上游那句无条件的 $(error) 变成可读的失败信息,
+              #   避免又看到一个只有 "Please wait susfs update." 的 make 报错。
+              if grep -q 'Please wait susfs update' "$PWD/KernelSU/kernel/tools/susfs_compat.mk" 2>/dev/null; then
+                echo "::error title=ReSukiSU 上游 SUSFS 闸门已触发::KernelSU 提交 $(git -C KernelSU rev-parse --short HEAD) 带有 kernel/tools/susfs_compat.mk 的无条件 \$(error Please wait susfs update.)。这是上游 48fa4bb7 起的行为: SUSFS 尚未同步新版 KernelSU 时会主动拒绝编译。解决办法: 把 KSU_REF 钉到闸门之前的提交 (实测 5b76b884 可用), 或等 simonpunk 同步 SUSFS 后改回 main。"
+                exit 1
+              fi
 
               KSU_SRC="$PWD/KernelSU"
               ln -sfn "$KSU_SRC/kernel" common/drivers/kernelsu
