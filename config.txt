@@ -1,0 +1,8 @@
+tag=meizu21-sukisu-26
+variant=ReSukiSU
+lto=none
+run=26
+sha=d74ca7dd175687b1f9f316563d754e0c6fa155e6
+manager_apk=ReSukiSU_v4.2.0-rc3_35171-arm64-v8a-release.apk
+manager_apk_tag=v4.2.0-rc3
+manager_apk_sha256=25657bc449439687608fffa04b4b586de90fc405e3dc6217bd997fc71ba0a0a1
