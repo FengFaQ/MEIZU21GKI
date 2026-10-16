@@ -71,7 +71,7 @@ if (-not $Execute) {
     Write-Host "  3) 逐 asset: POST /releases/{id}/assets?name=<name>  (从源 release 下载后重新上传)"
     Write-Host "     —— 已知 objects.githubusercontent.com 在本机被墙，所以先尝试直连下载；"
     Write-Host "        失败则改用 dist 分支的副本作为数据来源。"
-    Write-Host "  4) 触控修复版（run 24 的 meizu21-sukisu-24）：保持 prerelease=true，"
+    Write-Host "  4) 触控修复版（最新的 meizu21-sukisu-N 预览版，当前为 26）：保持 prerelease=true，"
     Write-Host "     仅确保 release notes 写明「内核侧改动未经验证」。"
     Write-Host ""
     Write-Host "要真正执行： pwsh -File tools/publish_release.ps1 -Execute   （需 GH_TOKEN）"
@@ -110,14 +110,44 @@ try {
 }
 
 # ---- 3) 迁移 assets -------------------------------------------------------
+# 数据来源有两条路，按可靠性排序：
+#   (a) release asset 直链 (browser_download_url) —— 权威，但要经
+#       objects.githubusercontent.com，本机实测被墙；
+#   (b) dist 分支的文件 —— 本机可达 (走 git over ssh)，且内容与 release 资产同源
+#       （CI 会把同一批产物 force-push 到 dist）。
+# 先试 (a)，失败自动回退 (b)。
+$DistDir = $null
+function Get-DistDir {
+    if ($script:DistDir) { return $script:DistDir }
+    $tmp = Join-Path $env:TEMP 'meizu21gki-dist'
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "      (回退) 从 dist 分支取产物 ..."
+    git -C $PSScriptRoot/.. fetch --depth 1 origin dist | Out-Null
+    git -C $PSScriptRoot/.. worktree add --detach $tmp FETCH_HEAD | Out-Null
+    $script:DistDir = $tmp
+    return $tmp
+}
+
 Write-Host "[3/4] 迁移 assets ..."
 foreach ($a in $src.assets) {
     $already = (Invoke-Gh GET "$ApiBase/releases/$($new.id)/assets") | Where-Object { $_.name -eq $a.name }
     if ($already) { Write-Host "      - $($a.name) 已存在，跳过"; continue }
 
     $tmp = Join-Path $env:TEMP ("rel-" + $a.name)
-    Write-Host "      - 下载 $($a.name) ..."
-    Invoke-WebRequest -Uri $a.browser_download_url -OutFile $tmp -Headers (Get-Headers) -TimeoutSec 900
+    Write-Host "      - 取 $($a.name) ..."
+    $got = $false
+    try {
+        Invoke-WebRequest -Uri $a.browser_download_url -OutFile $tmp -Headers (Get-Headers) -TimeoutSec 900
+        $got = $true
+    } catch {
+        Write-Host "        直链失败 ($($_.Exception.Message))，改用 dist 分支"
+    }
+    if (-not $got) {
+        $d = Get-DistDir
+        $cand = Join-Path $d $a.name
+        if (-not (Test-Path $cand)) { throw "dist 分支里也找不到 $($a.name)，无法迁移" }
+        Copy-Item $cand $tmp -Force
+    }
 
     Write-Host "      - 上传 $($a.name) ..."
     $up = "$($new.upload_url -replace '\{.*$','')?name=$([uri]::EscapeDataString($a.name))"
@@ -128,7 +158,7 @@ foreach ($a in $src.assets) {
 }
 
 # ---- 4) 确认触控版仍是 prerelease ----------------------------------------
-Write-Host "[4/4] 核对触控修复版（run 24 的 meizu21-sukisu-24）仍为 prerelease ..."
+Write-Host "[4/4] 核对触控修复版（最新 meizu21-sukisu-N）仍为 prerelease ..."
 $all = Invoke-Gh GET "$ApiBase/releases?per_page=20"
 foreach ($r in $all) {
     $flag = if ($r.prerelease) { 'prerelease' } else { 'OFFICIAL ' }
