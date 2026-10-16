@@ -1,0 +1,10 @@
+== KMI 兼容层(A 方案)结果 ==
+  已打: drivers/scsi/scsi_lib.c (新增 scsi_execute_cmd_len + 导出)
+  已打: mm/vmscan.c
+  已打: drivers/base/power/wakeup.c
+  已打: mm/memcontrol.c
+  已打: include/trace/hooks/binder.h (+2 个 hook)
+  已打: include/trace/hooks/mm.h (+9 个 hook)
+  已打: drivers/android/vendor_hooks.c:EXPORTS (+11 个导出)
+  已打: drivers/android/vendor_hooks.c:SPAM
+RESULT: OK
