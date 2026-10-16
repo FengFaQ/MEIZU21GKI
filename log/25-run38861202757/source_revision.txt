@@ -1,0 +1,10 @@
+manifest_branch=common-android14-6.1-2023-10
+source_override=<无, 用 AOSP ACK>
+REMOTE_BRANCH=0d89215310919593150f0ef047f9fd9902e02bc7	refs/heads/deprecated/android14-6.1-2023-10
+TAG_FALLBACK=<无>
+common_head=0d89215310919593150f0ef047f9fd9902e02bc7
+common_describe=0d8921531
+common_commit_date=Mon Jun 3 15:13:03 2024 +0800
+common_subject=UPSTREAM: net: sched: sch_multiq: fix possible OOB write in multiq_tune()
+--- manifest 里的 common 项目 ---
+--- KMI/LOCALVERSION 常量 ---
