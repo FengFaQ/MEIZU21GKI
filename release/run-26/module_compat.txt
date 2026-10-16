@@ -1,0 +1,59 @@
+# 厂商模块 KMI 兼容性报告(内核 Module.symvers vs 设备模块 __versions)
+# 清单: /home/runner/work/MEIZU21GKI/MEIZU21GKI/device/meizu21/module_kmi_manifest.txt
+# 内核: /home/runner/work/MEIZU21GKI/MEIZU21GKI/android14-6.1-25/bazel-bin/common/kernel_aarch64/Module.symvers
+# 需要内核提供且可校验的符号: 3280 个
+# 一致: 3192 / 缺失: 0 / CRC 不一致: 88
+
+RESULT: FAIL —— 存在无法加载的厂商模块(内核会打印 'disagrees about version of symbol' 或 'Unknown symbol')
+
+== CRC 不一致 共 88 个, 前 50 个 ==
+MISMATCH 期望 0xfef05604 实际 0xdd83e5af __devm_request_region
+MISMATCH 期望 0x40160406 实际 0x0ab46d8d __mod_lruvec_state
+MISMATCH 期望 0x733e5aea 实际 0x7265e465 __sock_create
+MISMATCH 期望 0x204d5fd8 实际 0xd32b6582 __sock_recv_cmsgs
+MISMATCH 期望 0x7b5c0af3 实际 0xcdc149a2 __sock_recv_timestamp
+MISMATCH 期望 0x1286e8cb 实际 0xd80f3e2d __sock_recv_wifi_status
+MISMATCH 期望 0x9b54ac60 实际 0x49b434ee anon_inode_getfile
+MISMATCH 期望 0x9a521192 实际 0xcf384c1c blkdev_get_by_dev
+MISMATCH 期望 0xae963328 实际 0x786c891c blkdev_put
+MISMATCH 期望 0x689cf12a 实际 0x2677d819 cgroup_add_legacy_cftypes
+MISMATCH 期望 0x29173af2 实际 0x84c7051f cgroup_path_ns
+MISMATCH 期望 0x9084b6ed 实际 0xc815fe12 cgroup_taskset_first
+MISMATCH 期望 0x5b3f915b 实际 0xa23b7f66 cgroup_taskset_next
+MISMATCH 期望 0x2de83642 实际 0x6e8d0410 check_move_unevictable_pages
+MISMATCH 期望 0xbb39eb34 实际 0xd2b664ac cpuset_cpus_allowed
+MISMATCH 期望 0xaab846a6 实际 0xd19a6c6f css_next_child
+MISMATCH 期望 0xd38a4fee 实际 0x1c8c3c9f dma_buf_attach
+MISMATCH 期望 0x33a08f5c 实际 0x4406c079 dma_buf_begin_cpu_access
+MISMATCH 期望 0x4694b7ae 实际 0xf0530291 dma_buf_begin_cpu_access_partial
+MISMATCH 期望 0x20217a91 实际 0x4425402e dma_buf_detach
+MISMATCH 期望 0xc4662128 实际 0xc82f07f0 dma_buf_end_cpu_access
+MISMATCH 期望 0x10b0fab0 实际 0x0b750434 dma_buf_end_cpu_access_partial
+MISMATCH 期望 0x729edaad 实际 0xf20c4b0b dma_buf_export
+MISMATCH 期望 0x45000878 实际 0x317a2244 dma_buf_fd
+MISMATCH 期望 0x3249e44a 实际 0xe1c6bdef dma_buf_get
+MISMATCH 期望 0x908b0ef3 实际 0x37a35f4e dma_buf_get_each
+MISMATCH 期望 0x29b4501b 实际 0x26c92687 dma_buf_get_flags
+MISMATCH 期望 0xc82b44af 实际 0xb1441f23 dma_buf_map_attachment
+MISMATCH 期望 0x0d9b14c2 实际 0x819fd9a0 dma_buf_put
+MISMATCH 期望 0x2a891bed 实际 0x54dc2906 dma_buf_unmap_attachment
+MISMATCH 期望 0x2d71c2f5 实际 0x0e98d45b dma_buf_vmap
+MISMATCH 期望 0xf59c872e 实际 0xdeb1c797 dma_buf_vunmap
+MISMATCH 期望 0xfe13a738 实际 0xfcb6d242 drm_dev_alloc
+MISMATCH 期望 0x94f2378f 实际 0x5762f2f1 drm_dev_put
+MISMATCH 期望 0x181bd358 实际 0x7ef67a65 drm_dev_register
+MISMATCH 期望 0x109bbc47 实际 0x99fc2812 drm_dev_unregister
+MISMATCH 期望 0xf43f8376 实际 0x6155f315 drm_gem_create_mmap_offset
+MISMATCH 期望 0xf599657c 实际 0x7bb2b1f8 drm_gem_get_pages
+MISMATCH 期望 0x3c2297ae 实际 0x3de8eeab drm_gem_handle_create
+MISMATCH 期望 0x4d79eedf 实际 0x90694ef5 drm_gem_mmap
+MISMATCH 期望 0x66f46466 实际 0x62be7bae drm_gem_mmap_obj
+MISMATCH 期望 0x80c5dae2 实际 0x9c19c481 drm_gem_object_init
+MISMATCH 期望 0x931a8fca 实际 0x1e4ed7f7 drm_gem_object_lookup
+MISMATCH 期望 0x262594a9 实际 0xf527d31d drm_gem_object_release
+MISMATCH 期望 0x1a12478b 实际 0x9a5c1e53 drm_gem_private_object_init
+MISMATCH 期望 0x1b620c22 实际 0x179b8dd3 drm_gem_put_pages
+MISMATCH 期望 0x6d5f295b 实际 0x7b3d61be drm_gem_vm_close
+MISMATCH 期望 0xe6160d64 实际 0x579d1817 drm_gem_vm_open
+MISMATCH 期望 0x931a87b9 实际 0xa8f1e1ea find_vma
+MISMATCH 期望 0x95d52c7e 实际 0xed4b637e find_vma_intersection
